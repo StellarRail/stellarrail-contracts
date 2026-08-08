@@ -1,0 +1,24 @@
+# Rust / Soroban
+/target/
+test_snapshots/
+
+# Node
+node_modules/
+clients/js/node_modules/
+clients/js/dist/
+*.tsbuildinfo
+
+# Env / secrets
+.env
+.env.*
+*.secret
+
+# Stellar CLI sandbox / identities
+.soroban/
+*.key.json
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+*.swp

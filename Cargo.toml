@@ -1,0 +1,24 @@
+[workspace]
+
+[package]
+name = "escrow"
+version = "0.1.0"
+edition = "2021"
+description = "StellarRail Soroban escrow contract (XLM): deposit / release / refund / expire"
+license = "MIT"
+repository = "https://github.com/stellarrail/stellarrail-contracts"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = "28.0"
+
+[dev-dependencies]
+soroban-sdk = { version = "28.0", features = ["testutils"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
+overflow-checks = true
