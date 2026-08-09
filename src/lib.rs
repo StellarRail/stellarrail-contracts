@@ -26,7 +26,7 @@ mod test {
     #[test]
     fn hello_returns_zero() {
         let env = Env::default();
-        let id = env.register_contract(None, EscrowContract);
+        let id = env.register(EscrowContract, ());
         let client = EscrowContractClient::new(&env, &id);
         assert_eq!(client.hello(), 0);
     }

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Pre-commit gate: fmt + clippy must be clean before a commit lands.
+set -euo pipefail
+
+echo "[hook] cargo fmt --check"
+cargo fmt --all -- --check
+
+echo "[hook] cargo clippy --all-targets -- -D warnings"
+cargo clippy --all-targets -- -D warnings
+
+echo "[hook] OK"
