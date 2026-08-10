@@ -1,11 +1,41 @@
-//! StellarRail escrow contract (scaffold).
+//! StellarRail escrow contract.
 //!
-//! Issue-by-issue build per `build.md`. Full interface lands across
-//! Phase B (ISSUE-011–028).
+//! Module responsibilities:
+//!
+//! | Module | Owns |
+//! |---|---|
+//! | `lib` | `#[contract]` + `#[contractimpl]` entrypoints only (thin glue) |
+//! | `types` | Canonical schema: `EscrowRequest`, `EscrowStatus`, `SCHEMA_VERSION` |
+//! | `errors` | Typed `EscrowError` codes (stable discriminants) |
+//! | `storage` | `DataKey`s, TTL-extending read/write helpers, counters |
+//! | `events` | `#[contractevent]` structs, emitted on every mutation |
+//! | `admin` | Roles: `initialize`, pause, rotation, upgrade auth |
+//! | `validation` | Pure input checks: amounts, deadlines, pagination caps |
+//!
+//! Rules: no `unwrap()`/`expect()` in non-test code, checked arithmetic,
+//! TTL extended on every write, exactly one event per mutation.
 
 #![no_std]
 
+// Staged modules: each is wired by its issue (005-008, Phase B).
+// The allowance is removed issue by issue as items become used.
+#[allow(dead_code)]
+mod admin;
+#[allow(dead_code)]
+mod errors;
+#[allow(dead_code)]
+mod events;
+#[allow(dead_code)]
+mod storage;
+#[allow(dead_code)]
+mod types;
+#[allow(dead_code)]
+mod validation;
+
 use soroban_sdk::{contract, contractimpl, Env};
+
+pub use errors::EscrowError;
+pub use types::{EscrowRequest, EscrowStatus, SCHEMA_VERSION};
 
 #[contract]
 pub struct EscrowContract;
