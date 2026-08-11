@@ -27,7 +27,6 @@ mod errors;
 mod events;
 #[allow(dead_code)]
 mod storage;
-#[allow(dead_code)]
 mod types;
 #[allow(dead_code)]
 mod validation;
