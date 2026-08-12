@@ -21,7 +21,6 @@
 // The allowance is removed issue by issue as items become used.
 #[allow(dead_code)]
 mod admin;
-#[allow(dead_code)]
 mod errors;
 #[allow(dead_code)]
 mod events;

@@ -30,3 +30,25 @@ pub enum EscrowError {
     /// `initialize` called twice.
     AlreadyInitialized = 11,
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn discriminants_are_stable_api() {
+        // The API maps these integers to HTTP codes (docs/ERRORS.md).
+        // Never reorder or renumber.
+        assert_eq!(EscrowError::AlreadyExists as u32, 1);
+        assert_eq!(EscrowError::NotFound as u32, 2);
+        assert_eq!(EscrowError::Unauthorized as u32, 3);
+        assert_eq!(EscrowError::InvalidAmount as u32, 4);
+        assert_eq!(EscrowError::InvalidDeadline as u32, 5);
+        assert_eq!(EscrowError::InvalidState as u32, 6);
+        assert_eq!(EscrowError::Expired as u32, 7);
+        assert_eq!(EscrowError::NotExpired as u32, 8);
+        assert_eq!(EscrowError::Overflow as u32, 9);
+        assert_eq!(EscrowError::Paused as u32, 10);
+        assert_eq!(EscrowError::AlreadyInitialized as u32, 11);
+    }
+}
