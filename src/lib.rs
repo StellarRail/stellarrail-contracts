@@ -22,8 +22,7 @@
 #[allow(dead_code)]
 mod admin;
 mod errors;
-#[allow(dead_code)]
-mod events;
+pub mod events;
 pub mod storage;
 mod types;
 #[allow(dead_code)]
