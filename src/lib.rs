@@ -24,6 +24,8 @@ mod admin;
 mod errors;
 pub mod events;
 pub mod storage;
+#[allow(dead_code)] // staged: settlement entrypoints land in Phase B (ISSUE-013+)
+mod token;
 mod types;
 #[allow(dead_code)]
 mod validation;
