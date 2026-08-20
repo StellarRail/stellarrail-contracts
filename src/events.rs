@@ -114,6 +114,92 @@ pub fn emit_initialized(env: &Env, admin: &Address, signer: &Address, token: &Ad
     .publish(env);
 }
 
+/// Emergency stop engaged. Indexer: halt settlement expectations
+/// (`expire` remains possible).
+#[contractevent]
+#[derive(Clone)]
+pub struct Paused {
+    #[topic]
+    pub actor: Address,
+}
+
+/// Emergency stop lifted.
+#[contractevent]
+#[derive(Clone)]
+pub struct Unpaused {
+    #[topic]
+    pub actor: Address,
+}
+
+/// Signer rotated by admin. Old signer is invalid immediately.
+#[contractevent]
+#[derive(Clone)]
+pub struct SignerUpdated {
+    #[topic]
+    pub new_signer: Address,
+    pub old_signer: Address,
+    pub actor: Address,
+}
+
+/// First half of two-step admin rotation.
+#[contractevent]
+#[derive(Clone)]
+pub struct AdminTransferInitiated {
+    #[topic]
+    pub new_admin: Address,
+    pub actor: Address,
+}
+
+/// Rotation completed by the staged admin.
+#[contractevent]
+#[derive(Clone)]
+pub struct AdminTransferAccepted {
+    #[topic]
+    pub new_admin: Address,
+}
+
+/// Emit `Paused` / `Unpaused`.
+pub fn emit_pause_toggled(env: &Env, actor: &Address, paused: bool) {
+    if paused {
+        Paused {
+            actor: actor.clone(),
+        }
+        .publish(env);
+    } else {
+        Unpaused {
+            actor: actor.clone(),
+        }
+        .publish(env);
+    }
+}
+
+/// Emit `SignerUpdated`.
+pub fn emit_signer_updated(env: &Env, actor: &Address, old_signer: &Address, new_signer: &Address) {
+    SignerUpdated {
+        new_signer: new_signer.clone(),
+        old_signer: old_signer.clone(),
+        actor: actor.clone(),
+    }
+    .publish(env);
+}
+
+/// Emit `AdminTransferInitiated`.
+pub fn emit_admin_transfer_initiated(env: &Env, actor: &Address, new_admin: &Address) {
+    AdminTransferInitiated {
+        new_admin: new_admin.clone(),
+        actor: actor.clone(),
+    }
+    .publish(env);
+}
+
+/// Emit `AdminTransferAccepted`.
+pub fn emit_admin_transfer_accepted(env: &Env, new_admin: &Address) {
+    AdminTransferAccepted {
+        new_admin: new_admin.clone(),
+    }
+    .publish(env);
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

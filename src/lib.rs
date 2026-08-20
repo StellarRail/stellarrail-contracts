@@ -11,26 +11,33 @@
 //! | `events` | `#[contractevent]` structs, emitted on every mutation |
 //! | `admin` | Roles: `initialize`, pause, rotation, upgrade auth |
 //! | `validation` | Pure input checks: amounts, deadlines, pagination caps |
+//! | `token` | SAC movement helpers (pull on deposit, push on settlement) |
 //!
 //! Rules: no `unwrap()`/`expect()` in non-test code, checked arithmetic,
 //! TTL extended on every write, exactly one event per mutation.
 
 #![no_std]
 
-// Staged modules: each is wired by its issue (005-008, Phase B).
-// The allowance is removed issue by issue as items become used.
+// Staged: role helpers are wired entrypoint-by-entrypoint across Phase B.
+// Removed at ISSUE-028 (full clippy sweep proves every helper is used).
 #[allow(dead_code)]
 mod admin;
 mod errors;
 pub mod events;
 pub mod storage;
-#[allow(dead_code)] // staged: settlement entrypoints land in Phase B (ISSUE-013+)
-mod token;
-mod types;
+// Staged: token helpers + validation consts + fixtures are wired across
+// Phase B (ISSUE-012+). Removed at ISSUE-028 via full clippy sweep.
 #[allow(dead_code)]
+mod token;
+pub mod types;
+#[allow(dead_code)] // staged: validation fns used from ISSUE-012; allowance removed at ISSUE-028
 mod validation;
 
-use soroban_sdk::{contract, contractimpl, Env};
+#[cfg(test)]
+#[allow(dead_code)] // staged: fixtures consumed across Phase B tests
+pub(crate) mod fixtures;
+
+use soroban_sdk::{contract, contractimpl, Address, Env};
 
 pub use errors::EscrowError;
 pub use types::{EscrowRequest, EscrowStatus, SCHEMA_VERSION};
@@ -40,22 +47,14 @@ pub struct EscrowContract;
 
 #[contractimpl]
 impl EscrowContract {
-    /// Scaffold placeholder: returns 0. Replaced by real entrypoints in Phase B.
-    pub fn hello(_env: Env) -> u32 {
-        0
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use soroban_sdk::Env;
-
-    #[test]
-    fn hello_returns_zero() {
-        let env = Env::default();
-        let id = env.register(EscrowContract, ());
-        let client = EscrowContractClient::new(&env, &id);
-        assert_eq!(client.hello(), 0);
+    /// One-time setup: roles + accepted SAC token. Second call fails
+    /// `AlreadyExists`. `admin` must authorize.
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        signer: Address,
+        token: Address,
+    ) -> Result<(), EscrowError> {
+        admin::do_initialize(&env, &admin, &signer, &token)
     }
 }
