@@ -193,4 +193,58 @@ mod test {
         );
         assert_eq!(res, Err(Ok(EscrowError::InvalidAmount)));
     }
+
+    #[test]
+    fn deposit_transfer_state_event() {
+        use soroban_sdk::testutils::Events as _;
+        let (env, actors) = setup();
+        let c = fixtures::client(&env, &actors);
+        fixtures::mint(&env, &actors, &actors.depositor, 100_000_000);
+        let before = fixtures::balance(&env, &actors, &actors.depositor);
+
+        let amount = 10_000_000;
+        let id = fixtures::request_id(&env, 7);
+        let now = env.ledger().timestamp();
+        let deadline = now + 3600;
+        let req = c.deposit(
+            &amount,
+            &id,
+            &actors.depositor,
+            &Some(actors.destination.clone()),
+            &deadline,
+        );
+
+        // Exactly one FundsLocked event. This must be read before ANY further
+        // contract invocation (even a token balance read resets the window).
+        let events = env.events().all().filter_by_contract(&actors.contract_id);
+        assert_eq!(events.events().len(), 1);
+
+        // Funds moved depositor -> contract.
+        assert_eq!(
+            fixtures::balance(&env, &actors, &actors.depositor),
+            before - amount
+        );
+        assert_eq!(
+            fixtures::balance(&env, &actors, &actors.contract_id),
+            amount
+        );
+
+        // Persisted request is Locked with exact fields.
+        assert_eq!(req.status, EscrowStatus::Locked);
+        assert_eq!(req.amount, amount);
+        assert_eq!(req.deadline, deadline);
+        assert_eq!(req.created_at, now);
+        assert_eq!(req.updated_at, now);
+
+        let stored = env.as_contract(&actors.contract_id, || {
+            crate::storage::get_request(&env, &id)
+        });
+        assert_eq!(stored, Some(req));
+
+        // Counters updated.
+        let stats = env.as_contract(&actors.contract_id, || crate::storage::get_stats(&env));
+        assert_eq!(stats.locked_count, 1);
+        assert_eq!(stats.locked_total, amount);
+        assert_eq!(stats.lifetime_volume, amount);
+    }
 }
