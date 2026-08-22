@@ -5,7 +5,7 @@
 
 use soroban_sdk::testutils::{Address as _, Ledger as _};
 use soroban_sdk::token::StellarAssetClient;
-use soroban_sdk::{Address, BytesN, Env};
+use soroban_sdk::{Address, BytesN, Env, IntoVal, Val, Vec as SdkVec};
 
 use crate::EscrowContractClient;
 
@@ -71,4 +71,47 @@ pub fn balance(env: &Env, actors: &Actors, who: &Address) -> i128 {
 /// Deterministic request id from one repeated byte.
 pub fn request_id(env: &Env, byte: u8) -> BytesN<32> {
     BytesN::from_array(env, &[byte; 32])
+}
+
+/// Restrict auth to a single `caller` invoking `fn_name` with `args`.
+///
+/// Call `env.set_auths(&[])` first to drop `mock_all_auths`, then this helper
+/// mocks exactly one authorized call. Nested token pushes from the escrow
+/// contract itself need no user auth, so `sub_invokes` stays empty for
+/// release/refund/pause-style entrypoints.
+pub fn mock_single_call(
+    env: &Env,
+    contract_id: &Address,
+    fn_name: &str,
+    args: SdkVec<Val>,
+    caller: &Address,
+) {
+    use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
+    let invoke = MockAuthInvoke {
+        contract: contract_id,
+        fn_name,
+        args,
+        sub_invokes: &[],
+    };
+    env.mock_auths(&[MockAuth {
+        address: caller,
+        invoke: &invoke,
+    }]);
+}
+
+/// Mock `release(caller, request_id)` for exactly one call.
+pub fn mock_release(env: &Env, actors: &Actors, caller: &Address, id: &BytesN<32>) {
+    let args = (caller.clone(), id.clone()).into_val(env);
+    mock_single_call(env, &actors.contract_id, "release", args, caller);
+}
+
+/// Mock `refund(caller, request_id)` for exactly one call.
+pub fn mock_refund(env: &Env, actors: &Actors, caller: &Address, id: &BytesN<32>) {
+    let args = (caller.clone(), id.clone()).into_val(env);
+    mock_single_call(env, &actors.contract_id, "refund", args, caller);
+}
+
+/// Drop all auth mocking (undoes `mock_all_auths`).
+pub fn clear_auth_mock(env: &Env) {
+    env.set_auths(&[]);
 }

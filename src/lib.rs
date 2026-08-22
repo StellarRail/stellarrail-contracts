@@ -116,6 +116,59 @@ impl EscrowContract {
         events::emit_funds_locked(&env, &request_id, amount, &depositor);
         Ok(request)
     }
+
+    /// Settle a `Locked` request to its destination. Only the admin or the
+    /// signer may call (`caller` must authorize). Past the deadline the
+    /// request can only be expired — this returns `Expired` as a hint.
+    pub fn release(
+        env: Env,
+        caller: Address,
+        request_id: BytesN<32>,
+    ) -> Result<EscrowRequest, EscrowError> {
+        if storage::is_paused(&env) {
+            return Err(EscrowError::Paused);
+        }
+        let mut request = storage::get_request(&env, &request_id).ok_or(EscrowError::NotFound)?;
+        if request.status != EscrowStatus::Locked {
+            return Err(EscrowError::InvalidState);
+        }
+        let now = env.ledger().timestamp();
+        if now > request.deadline {
+            return Err(EscrowError::Expired);
+        }
+        admin::require_admin_or_signer(&env, &caller)?;
+        let token = storage::get_token(&env).ok_or(EscrowError::NotFound)?;
+        // Unreachable by construction (deposit requires Some); kept as a
+        // corruption guard instead of unwrap.
+        let destination = request
+            .destination
+            .clone()
+            .ok_or(EscrowError::InvalidState)?;
+
+        // Effects before interactions.
+        request.status = EscrowStatus::Released;
+        request.updated_at = now;
+        storage::set_request(&env, &request);
+        let mut stats = storage::get_stats(&env);
+        stats.locked_count = stats
+            .locked_count
+            .checked_sub(1)
+            .ok_or(EscrowError::Overflow)?;
+        stats.locked_total = stats
+            .locked_total
+            .checked_sub(request.amount)
+            .ok_or(EscrowError::Overflow)?;
+        stats.released_count = stats
+            .released_count
+            .checked_add(1)
+            .ok_or(EscrowError::Overflow)?;
+        storage::set_stats(&env, &stats);
+
+        // Interactions last: pay out, then emit.
+        token::push(&env, &token, &destination, request.amount);
+        events::emit_payment_released(&env, &request_id, request.amount, &caller);
+        Ok(request)
+    }
 }
 
 #[cfg(test)]
@@ -246,5 +299,63 @@ mod test {
         assert_eq!(stats.locked_count, 1);
         assert_eq!(stats.locked_total, amount);
         assert_eq!(stats.lifetime_volume, amount);
+    }
+
+    fn fund_and_deposit(env: &Env, actors: &Actors, byte: u8, amount: i128) -> BytesN<32> {
+        fixtures::mint(env, actors, &actors.depositor, amount * 10);
+        let c = fixtures::client(env, actors);
+        let id = fixtures::request_id(env, byte);
+        c.deposit(
+            &amount,
+            &id,
+            &actors.depositor,
+            &Some(actors.destination.clone()),
+            &(env.ledger().timestamp() + 3600),
+        );
+        id
+    }
+
+    #[test]
+    fn release_guards_non_admin() {
+        use soroban_sdk::testutils::Address as _;
+        let (env, actors) = setup();
+        let id = fund_and_deposit(&env, &actors, 11, 10_000_000);
+
+        // Auth passes for a random caller, but the role check must fail typed.
+        fixtures::clear_auth_mock(&env);
+        let rogue = Address::generate(&env);
+        fixtures::mock_release(&env, &actors, &rogue, &id);
+        let c = fixtures::client(&env, &actors);
+        let res = c.try_release(&rogue, &id);
+        assert_eq!(res, Err(Ok(EscrowError::Unauthorized)));
+    }
+
+    #[test]
+    fn release_guards_double_release() {
+        let (env, actors) = setup();
+        let id = fund_and_deposit(&env, &actors, 12, 10_000_000);
+        let c = fixtures::client(&env, &actors);
+        c.release(&actors.admin, &id);
+        let res = c.try_release(&actors.admin, &id);
+        assert_eq!(res, Err(Ok(EscrowError::InvalidState)));
+    }
+
+    #[test]
+    fn release_guards_expired_deadline() {
+        use soroban_sdk::testutils::Ledger as _;
+        let (env, actors) = setup();
+        let id = fund_and_deposit(&env, &actors, 13, 10_000_000);
+        let c = fixtures::client(&env, &actors);
+        env.ledger().set_timestamp(env.ledger().timestamp() + 3601);
+        let res = c.try_release(&actors.admin, &id);
+        assert_eq!(res, Err(Ok(EscrowError::Expired)));
+    }
+
+    #[test]
+    fn release_guards_unknown_request() {
+        let (env, actors) = setup();
+        let c = fixtures::client(&env, &actors);
+        let res = c.try_release(&actors.admin, &fixtures::request_id(&env, 99));
+        assert_eq!(res, Err(Ok(EscrowError::NotFound)));
     }
 }
