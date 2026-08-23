@@ -358,4 +358,53 @@ mod test {
         let res = c.try_release(&actors.admin, &fixtures::request_id(&env, 99));
         assert_eq!(res, Err(Ok(EscrowError::NotFound)));
     }
+
+    #[test]
+    fn release_transfer_event_status() {
+        use soroban_sdk::testutils::Events as _;
+        let (env, actors) = setup();
+        let amount = 25_000_000;
+        let id = fund_and_deposit(&env, &actors, 14, amount);
+        let c = fixtures::client(&env, &actors);
+        let dest_before = fixtures::balance(&env, &actors, &actors.destination);
+
+        let req = c.release(&actors.admin, &id);
+
+        // Exactly one PaymentReleased event (read before any further
+        // invocation, which would reset the event window).
+        let events = env.events().all().filter_by_contract(&actors.contract_id);
+        assert_eq!(events.events().len(), 1);
+
+        // Destination paid exactly once.
+        assert_eq!(
+            fixtures::balance(&env, &actors, &actors.destination),
+            dest_before + amount
+        );
+        // Contract holds nothing for this request anymore.
+        assert_eq!(fixtures::balance(&env, &actors, &actors.contract_id), 0);
+
+        // Terminal state persisted.
+        assert_eq!(req.status, EscrowStatus::Released);
+        assert_eq!(req.updated_at, env.ledger().timestamp());
+        let stats = env.as_contract(&actors.contract_id, || crate::storage::get_stats(&env));
+        assert_eq!(stats.locked_count, 0);
+        assert_eq!(stats.locked_total, 0);
+        assert_eq!(stats.released_count, 1);
+        assert_eq!(stats.lifetime_volume, amount);
+    }
+
+    #[test]
+    fn release_by_signer_settles() {
+        let (env, actors) = setup();
+        let amount = 5_000_000;
+        let id = fund_and_deposit(&env, &actors, 15, amount);
+        let c = fixtures::client(&env, &actors);
+        let dest_before = fixtures::balance(&env, &actors, &actors.destination);
+        let req = c.release(&actors.signer, &id);
+        assert_eq!(req.status, EscrowStatus::Released);
+        assert_eq!(
+            fixtures::balance(&env, &actors, &actors.destination),
+            dest_before + amount
+        );
+    }
 }
