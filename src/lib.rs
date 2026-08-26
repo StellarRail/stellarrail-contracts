@@ -494,4 +494,48 @@ mod test {
         let res = c.try_refund(&actors.admin, &fixtures::request_id(&env, 99));
         assert_eq!(res, Err(Ok(EscrowError::NotFound)));
     }
+
+    #[test]
+    fn refund_transfer_event_status() {
+        use soroban_sdk::testutils::Events as _;
+        let (env, actors) = setup();
+        let amount = 30_000_000;
+        let id = fund_and_deposit(&env, &actors, 19, amount);
+        let c = fixtures::client(&env, &actors);
+        let depositor_before = fixtures::balance(&env, &actors, &actors.depositor);
+
+        let req = c.refund(&actors.signer, &id);
+
+        // Exactly one PaymentRefunded event (read before balance calls).
+        let events = env.events().all().filter_by_contract(&actors.contract_id);
+        assert_eq!(events.events().len(), 1);
+
+        // Depositor made whole; contract holds nothing.
+        assert_eq!(
+            fixtures::balance(&env, &actors, &actors.depositor),
+            depositor_before + amount
+        );
+        assert_eq!(fixtures::balance(&env, &actors, &actors.contract_id), 0);
+
+        // Terminal state persisted; release counter untouched.
+        assert_eq!(req.status, EscrowStatus::Refunded);
+        let stats = env.as_contract(&actors.contract_id, || crate::storage::get_stats(&env));
+        assert_eq!(stats.locked_count, 0);
+        assert_eq!(stats.locked_total, 0);
+        assert_eq!(stats.released_count, 0);
+        assert_eq!(stats.lifetime_volume, amount);
+    }
+
+    #[test]
+    fn refund_after_deadline_still_settles() {
+        use soroban_sdk::testutils::Ledger as _;
+        // Rejection path stays open past the deadline (status is still Locked).
+        let (env, actors) = setup();
+        let amount = 8_000_000;
+        let id = fund_and_deposit(&env, &actors, 20, amount);
+        env.ledger().set_timestamp(env.ledger().timestamp() + 7200);
+        let c = fixtures::client(&env, &actors);
+        let req = c.refund(&actors.admin, &id);
+        assert_eq!(req.status, EscrowStatus::Refunded);
+    }
 }
