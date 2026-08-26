@@ -169,6 +169,51 @@ impl EscrowContract {
         events::emit_payment_released(&env, &request_id, request.amount, &caller);
         Ok(request)
     }
+
+    /// Return locked funds to the depositor (rejection path). Only the admin
+    /// or the signer may call. Accepted from `Locked` at any time — including
+    /// past the deadline; terminal states (`Released`/`Refunded`/`Expired`/
+    /// `Failed`) fail `InvalidState`.
+    ///
+    /// Safety note: `expire` already transfers funds when it marks a request
+    /// `Expired`, so `Expired` is terminal and NOT refundable — refunding from
+    /// `Expired` would pay the depositor twice.
+    pub fn refund(
+        env: Env,
+        caller: Address,
+        request_id: BytesN<32>,
+    ) -> Result<EscrowRequest, EscrowError> {
+        if storage::is_paused(&env) {
+            return Err(EscrowError::Paused);
+        }
+        let mut request = storage::get_request(&env, &request_id).ok_or(EscrowError::NotFound)?;
+        if request.status != EscrowStatus::Locked {
+            return Err(EscrowError::InvalidState);
+        }
+        admin::require_admin_or_signer(&env, &caller)?;
+        let token = storage::get_token(&env).ok_or(EscrowError::NotFound)?;
+
+        // Effects before interactions.
+        let now = env.ledger().timestamp();
+        request.status = EscrowStatus::Refunded;
+        request.updated_at = now;
+        storage::set_request(&env, &request);
+        let mut stats = storage::get_stats(&env);
+        stats.locked_count = stats
+            .locked_count
+            .checked_sub(1)
+            .ok_or(EscrowError::Overflow)?;
+        stats.locked_total = stats
+            .locked_total
+            .checked_sub(request.amount)
+            .ok_or(EscrowError::Overflow)?;
+        storage::set_stats(&env, &stats);
+
+        // Interactions last: return funds, then emit.
+        token::push(&env, &token, &request.depositor, request.amount);
+        events::emit_payment_refunded(&env, &request_id, request.amount, &caller);
+        Ok(request)
+    }
 }
 
 #[cfg(test)]
@@ -406,5 +451,47 @@ mod test {
             fixtures::balance(&env, &actors, &actors.destination),
             dest_before + amount
         );
+    }
+
+    #[test]
+    fn refund_guards_non_admin() {
+        use soroban_sdk::testutils::Address as _;
+        let (env, actors) = setup();
+        let id = fund_and_deposit(&env, &actors, 16, 10_000_000);
+
+        fixtures::clear_auth_mock(&env);
+        let rogue = Address::generate(&env);
+        fixtures::mock_refund(&env, &actors, &rogue, &id);
+        let c = fixtures::client(&env, &actors);
+        let res = c.try_refund(&rogue, &id);
+        assert_eq!(res, Err(Ok(EscrowError::Unauthorized)));
+    }
+
+    #[test]
+    fn refund_guards_after_release() {
+        let (env, actors) = setup();
+        let id = fund_and_deposit(&env, &actors, 17, 10_000_000);
+        let c = fixtures::client(&env, &actors);
+        c.release(&actors.admin, &id);
+        let res = c.try_refund(&actors.admin, &id);
+        assert_eq!(res, Err(Ok(EscrowError::InvalidState)));
+    }
+
+    #[test]
+    fn refund_guards_double_refund() {
+        let (env, actors) = setup();
+        let id = fund_and_deposit(&env, &actors, 18, 10_000_000);
+        let c = fixtures::client(&env, &actors);
+        c.refund(&actors.signer, &id);
+        let res = c.try_refund(&actors.signer, &id);
+        assert_eq!(res, Err(Ok(EscrowError::InvalidState)));
+    }
+
+    #[test]
+    fn refund_guards_unknown_request() {
+        let (env, actors) = setup();
+        let c = fixtures::client(&env, &actors);
+        let res = c.try_refund(&actors.admin, &fixtures::request_id(&env, 99));
+        assert_eq!(res, Err(Ok(EscrowError::NotFound)));
     }
 }
