@@ -251,6 +251,11 @@ impl EscrowContract {
         events::emit_request_expired(&env, &request_id, request.amount, &request.depositor);
         Ok(request)
     }
+
+    /// Read a request. No auth, no writes, no TTL bump (strictly read-only).
+    pub fn get_request(env: Env, request_id: BytesN<32>) -> Result<EscrowRequest, EscrowError> {
+        storage::get_request(&env, &request_id).ok_or(EscrowError::NotFound)
+    }
 }
 
 #[cfg(test)]
@@ -635,5 +640,25 @@ mod test {
         env.ledger().set_timestamp(env.ledger().timestamp() + 7200);
         let res = c.try_expire(&id);
         assert_eq!(res, Err(Ok(EscrowError::InvalidState)));
+    }
+
+    #[test]
+    fn get_request_returns_stored() {
+        let (env, actors) = setup();
+        let id = fund_and_deposit(&env, &actors, 25, 10_000_000);
+        let c = fixtures::client(&env, &actors);
+        let req = c.get_request(&id);
+        assert_eq!(req.request_id, id);
+        assert_eq!(req.depositor, actors.depositor);
+        assert_eq!(req.destination, Some(actors.destination.clone()));
+        assert_eq!(req.status, EscrowStatus::Locked);
+    }
+
+    #[test]
+    fn get_request_unknown_fails() {
+        let (env, actors) = setup();
+        let c = fixtures::client(&env, &actors);
+        let res = c.try_get_request(&fixtures::request_id(&env, 99));
+        assert_eq!(res, Err(Ok(EscrowError::NotFound)));
     }
 }
