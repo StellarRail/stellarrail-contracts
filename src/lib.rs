@@ -214,6 +214,43 @@ impl EscrowContract {
         events::emit_payment_refunded(&env, &request_id, request.amount, &caller);
         Ok(request)
     }
+
+    /// Rescue past-due funds. Callable by ANYONE (no auth) — it only ever
+    /// pays the original depositor, so there is nothing to steal. Requires
+    /// `now > deadline` and `Locked` status; works while paused so funds
+    /// always remain rescuable.
+    pub fn expire(env: Env, request_id: BytesN<32>) -> Result<EscrowRequest, EscrowError> {
+        let mut request = storage::get_request(&env, &request_id).ok_or(EscrowError::NotFound)?;
+        if request.status != EscrowStatus::Locked {
+            return Err(EscrowError::InvalidState);
+        }
+        let now = env.ledger().timestamp();
+        if now <= request.deadline {
+            return Err(EscrowError::NotExpired);
+        }
+        let token = storage::get_token(&env).ok_or(EscrowError::NotFound)?;
+
+        // Effects before interactions.
+        request.status = EscrowStatus::Expired;
+        request.updated_at = now;
+        storage::set_request(&env, &request);
+        let mut stats = storage::get_stats(&env);
+        stats.locked_count = stats
+            .locked_count
+            .checked_sub(1)
+            .ok_or(EscrowError::Overflow)?;
+        stats.locked_total = stats
+            .locked_total
+            .checked_sub(request.amount)
+            .ok_or(EscrowError::Overflow)?;
+        storage::set_stats(&env, &stats);
+
+        // Interactions last: return funds, then emit. The event actor is the
+        // refunded depositor — expire itself is permissionless.
+        token::push(&env, &token, &request.depositor, request.amount);
+        events::emit_request_expired(&env, &request_id, request.amount, &request.depositor);
+        Ok(request)
+    }
 }
 
 #[cfg(test)]
@@ -537,5 +574,66 @@ mod test {
         let c = fixtures::client(&env, &actors);
         let req = c.refund(&actors.admin, &id);
         assert_eq!(req.status, EscrowStatus::Refunded);
+    }
+
+    #[test]
+    fn expire_rejects_early() {
+        let (env, actors) = setup();
+        let id = fund_and_deposit(&env, &actors, 21, 10_000_000);
+        let c = fixtures::client(&env, &actors);
+        let res = c.try_expire(&id);
+        assert_eq!(res, Err(Ok(EscrowError::NotExpired)));
+    }
+
+    #[test]
+    fn expire_by_third_party_refunds_depositor() {
+        use soroban_sdk::testutils::{Events as _, Ledger as _};
+        let (env, actors) = setup();
+        let amount = 12_000_000;
+        let id = fund_and_deposit(&env, &actors, 22, amount);
+        env.ledger().set_timestamp(env.ledger().timestamp() + 7200);
+
+        // No auth is configured at all here: expire is permissionless.
+        // (clear_auth_mock dropped mock_all_auths; no mock_auths installed.)
+        fixtures::clear_auth_mock(&env);
+        let c = fixtures::client(&env, &actors);
+        let depositor_before = fixtures::balance(&env, &actors, &actors.depositor);
+        let req = c.expire(&id);
+
+        // Exactly one RequestExpired event (read before balance calls).
+        let events = env.events().all().filter_by_contract(&actors.contract_id);
+        assert_eq!(events.events().len(), 1);
+
+        assert_eq!(req.status, EscrowStatus::Expired);
+        assert_eq!(
+            fixtures::balance(&env, &actors, &actors.depositor),
+            depositor_before + amount
+        );
+        assert_eq!(fixtures::balance(&env, &actors, &actors.contract_id), 0);
+    }
+
+    #[test]
+    fn expire_twice_fails() {
+        use soroban_sdk::testutils::Ledger as _;
+        let (env, actors) = setup();
+        let id = fund_and_deposit(&env, &actors, 23, 10_000_000);
+        env.ledger().set_timestamp(env.ledger().timestamp() + 7200);
+        let c = fixtures::client(&env, &actors);
+        c.expire(&id);
+        let res = c.try_expire(&id);
+        assert_eq!(res, Err(Ok(EscrowError::InvalidState)));
+    }
+
+    #[test]
+    fn expire_after_release_fails() {
+        let (env, actors) = setup();
+        let id = fund_and_deposit(&env, &actors, 24, 10_000_000);
+        let c = fixtures::client(&env, &actors);
+        c.release(&actors.admin, &id);
+        // Push past the deadline: released funds must NOT move again.
+        use soroban_sdk::testutils::Ledger as _;
+        env.ledger().set_timestamp(env.ledger().timestamp() + 7200);
+        let res = c.try_expire(&id);
+        assert_eq!(res, Err(Ok(EscrowError::InvalidState)));
     }
 }
