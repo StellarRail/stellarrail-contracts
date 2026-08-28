@@ -36,7 +36,7 @@ mod validation;
 #[allow(dead_code)] // staged: fixtures consumed across Phase B tests
 pub(crate) mod fixtures;
 
-use soroban_sdk::{contract, contractimpl, Address, BytesN, Env};
+use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Vec};
 
 pub use errors::EscrowError;
 pub use types::{EscrowRequest, EscrowStatus, SCHEMA_VERSION};
@@ -255,6 +255,47 @@ impl EscrowContract {
     /// Read a request. No auth, no writes, no TTL bump (strictly read-only).
     pub fn get_request(env: Env, request_id: BytesN<32>) -> Result<EscrowRequest, EscrowError> {
         storage::get_request(&env, &request_id).ok_or(EscrowError::NotFound)
+    }
+
+    /// Paginate the request registry in insertion order. `offset`/`limit`
+    /// slice the raw registry (bounded work: at most `limit` reads); the
+    /// status filter drops non-matching entries within the window, so
+    /// filtered scans walk pages until a short page. `limit` is capped at
+    /// `MAX_LIST_LIMIT` (50); `limit == 0` or `offset` past the end yields
+    /// an empty page. Read-only.
+    pub fn list_requests(
+        env: Env,
+        status_filter: Option<EscrowStatus>,
+        offset: u32,
+        limit: u32,
+    ) -> Result<Vec<EscrowRequest>, EscrowError> {
+        use crate::validation::MAX_LIST_LIMIT;
+        if limit > MAX_LIST_LIMIT {
+            return Err(EscrowError::InvalidAmount);
+        }
+        let ids = storage::get_all_ids(&env);
+        let total = ids.len();
+        let mut out = Vec::new(&env);
+        if limit == 0 || offset >= total {
+            return Ok(out);
+        }
+        let window = offset.checked_add(limit).ok_or(EscrowError::Overflow)?;
+        let end = if window < total { window } else { total };
+        let mut i = offset;
+        while i < end {
+            let id = ids.get(i).ok_or(EscrowError::NotFound)?;
+            if let Some(req) = storage::get_request(&env, &id) {
+                let keep = match &status_filter {
+                    None => true,
+                    Some(want) => *want == req.status,
+                };
+                if keep {
+                    out.push_back(req);
+                }
+            }
+            i += 1;
+        }
+        Ok(out)
     }
 }
 
@@ -660,5 +701,66 @@ mod test {
         let c = fixtures::client(&env, &actors);
         let res = c.try_get_request(&fixtures::request_id(&env, 99));
         assert_eq!(res, Err(Ok(EscrowError::NotFound)));
+    }
+
+    #[test]
+    fn list_requests_pages_seeded_registry() {
+        let (env, actors) = setup();
+        let c = fixtures::client(&env, &actors);
+        fixtures::mint(&env, &actors, &actors.depositor, 1_000_000_000);
+        // 25 deposits: bytes 100..125.
+        for byte in 100u8..125u8 {
+            c.deposit(
+                &1_000_000,
+                &fixtures::request_id(&env, byte),
+                &actors.depositor,
+                &Some(actors.destination.clone()),
+                &(env.ledger().timestamp() + 3600),
+            );
+        }
+        // Settle: first 10 released, next 5 refunded, last 10 stay locked.
+        for byte in 100u8..110u8 {
+            c.release(&actors.admin, &fixtures::request_id(&env, byte));
+        }
+        for byte in 110u8..115u8 {
+            c.refund(&actors.signer, &fixtures::request_id(&env, byte));
+        }
+
+        let page1 = c.list_requests(&None, &0, &10);
+        assert_eq!(page1.len(), 10);
+        assert_eq!(
+            page1.get(0).unwrap().request_id,
+            fixtures::request_id(&env, 100)
+        );
+        let page2 = c.list_requests(&None, &10, &10);
+        assert_eq!(page2.len(), 10);
+        assert_eq!(
+            page2.get(0).unwrap().request_id,
+            fixtures::request_id(&env, 110)
+        );
+        let page3 = c.list_requests(&None, &20, &10);
+        assert_eq!(page3.len(), 5);
+
+        // Filtered: all 10 released across one window.
+        let released = c.list_requests(&Some(EscrowStatus::Released), &0, &50);
+        assert_eq!(released.len(), 10);
+        // Filtered window over locked tail (ids 115..125 are all Locked).
+        let locked_tail = c.list_requests(&Some(EscrowStatus::Locked), &15, &10);
+        assert_eq!(locked_tail.len(), 10);
+        // Filtered window with no matches.
+        let empty = c.list_requests(&Some(EscrowStatus::Locked), &0, &10);
+        assert_eq!(empty.len(), 0);
+
+        // Offset past the end and zero limit yield empty pages.
+        assert_eq!(c.list_requests(&None, &100, &10).len(), 0);
+        assert_eq!(c.list_requests(&None, &0, &0).len(), 0);
+    }
+
+    #[test]
+    fn list_requests_rejects_over_cap() {
+        let (env, actors) = setup();
+        let c = fixtures::client(&env, &actors);
+        let res = c.try_list_requests(&None, &0, &1000);
+        assert_eq!(res, Err(Ok(EscrowError::InvalidAmount)));
     }
 }

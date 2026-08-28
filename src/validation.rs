@@ -16,7 +16,6 @@ pub const MAX_DEADLINE_SECS: u64 = 30 * 24 * 60 * 60;
 pub const MAX_AMOUNT: i128 = 50_000_000_000 * 10_000_000;
 
 /// Pagination cap for `list_requests`.
-#[allow(dead_code)] // staged: enforced by list_requests in ISSUE-020
 pub const MAX_LIST_LIMIT: u32 = 50;
 
 /// Amount must be a positive stroop value within the 50M XLM supply guard.
