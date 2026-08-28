@@ -763,4 +763,44 @@ mod test {
         let res = c.try_list_requests(&None, &0, &1000);
         assert_eq!(res, Err(Ok(EscrowError::InvalidAmount)));
     }
+
+    #[test]
+    fn deposit_deadline_bounds_enforced() {
+        let (env, actors) = setup();
+        fixtures::mint(&env, &actors, &actors.depositor, 1_000_000_000);
+        let c = fixtures::client(&env, &actors);
+        let now = env.ledger().timestamp();
+        let dest = Some(actors.destination.clone());
+
+        // Under the 60s minimum.
+        let short = c.try_deposit(
+            &1_000_000,
+            &fixtures::request_id(&env, 30),
+            &actors.depositor,
+            &dest,
+            &(now + 30),
+        );
+        assert_eq!(short, Err(Ok(EscrowError::InvalidDeadline)));
+
+        // Over the 30-day maximum (31 days, and a 10-year deadline).
+        for (byte, delta) in [(31u8, 31 * 24 * 60 * 60), (32u8, 10 * 365 * 24 * 60 * 60)] {
+            let res = c.try_deposit(
+                &1_000_000,
+                &fixtures::request_id(&env, byte),
+                &actors.depositor,
+                &dest,
+                &(now + delta),
+            );
+            assert_eq!(res, Err(Ok(EscrowError::InvalidDeadline)));
+        }
+
+        // Exact minimum lifetime is accepted.
+        c.deposit(
+            &1_000_000,
+            &fixtures::request_id(&env, 33),
+            &actors.depositor,
+            &dest,
+            &(now + 60),
+        );
+    }
 }

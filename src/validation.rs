@@ -28,6 +28,12 @@ pub fn check_amount(amount: i128) -> Result<(), EscrowError> {
 
 /// Deadline must leave at least `MIN_DEADLINE_SECS` and at most
 /// `MAX_DEADLINE_SECS` from `now` (ledger close time).
+///
+/// `now` must come from `env.ledger().timestamp()`: ledger close time has
+/// ~5s granularity and can lag wall-clock. The API absorbs this with a
+/// 300s grace recommendation (see `docs/STORAGE.md` clock-skew note) and
+/// should use >= 1h deadlines in production; `MIN_DEADLINE_SECS` (60s)
+/// exists so short-lived test drills stay possible.
 pub fn check_deadline(deadline: u64, now: u64) -> Result<(), EscrowError> {
     if deadline <= now {
         return Err(EscrowError::InvalidDeadline);
