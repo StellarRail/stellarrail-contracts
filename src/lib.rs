@@ -803,4 +803,32 @@ mod test {
             &(now + 60),
         );
     }
+
+    #[test]
+    fn amounts_overflow_guarded() {
+        let (env, actors) = setup();
+        fixtures::mint(&env, &actors, &actors.depositor, 1_000_000_000);
+        // Push a counter to the edge: the next deposit must fail Overflow
+        // (and roll back the request write atomically).
+        env.as_contract(&actors.contract_id, || {
+            let mut stats = crate::storage::get_stats(&env);
+            stats.lifetime_volume = i128::MAX;
+            crate::storage::set_stats(&env, &stats);
+        });
+        let c = fixtures::client(&env, &actors);
+        let id = fixtures::request_id(&env, 34);
+        let res = c.try_deposit(
+            &1_000_000,
+            &id,
+            &actors.depositor,
+            &Some(actors.destination.clone()),
+            &(env.ledger().timestamp() + 3600),
+        );
+        assert_eq!(res, Err(Ok(EscrowError::Overflow)));
+        // Rolled back: no request persisted.
+        let stored = env.as_contract(&actors.contract_id, || {
+            crate::storage::get_request(&env, &id)
+        });
+        assert_eq!(stored, None);
+    }
 }

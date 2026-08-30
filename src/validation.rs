@@ -19,6 +19,12 @@ pub const MAX_AMOUNT: i128 = 50_000_000_000 * 10_000_000;
 pub const MAX_LIST_LIMIT: u32 = 50;
 
 /// Amount must be a positive stroop value within the 50M XLM supply guard.
+///
+/// All money in this contract is denominated in stroops (`i128`,
+/// 1 XLM = 10^7 stroops) so there is no decimal point to lose. `MAX_AMOUNT`
+/// (50 000 000 000 × 10^7) rejects anything above the plausible XLM supply
+/// long before `i128` arithmetic could overflow; every counter update
+/// additionally uses `checked_*` and maps failure to `Overflow`.
 pub fn check_amount(amount: i128) -> Result<(), EscrowError> {
     if amount <= 0 || amount > MAX_AMOUNT {
         return Err(EscrowError::InvalidAmount);
