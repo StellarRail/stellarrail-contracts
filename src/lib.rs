@@ -831,4 +831,33 @@ mod test {
         });
         assert_eq!(stored, None);
     }
+
+    #[test]
+    fn reentrancy_failed_transfer_rolls_back() {
+        use soroban_sdk::testutils::Events as _;
+        // Checks-effects-interactions + host atomicity: the request write and
+        // the token pull are one transaction. Here the pull must fail
+        // (depositor was never funded), so nothing may persist — no request,
+        // no counters, no events. A reentrant/callback-style partial state is
+        // impossible: the host forbids reentering the contract mid-call and
+        // rolls back the whole invocation on any failure.
+        let (env, actors) = setup();
+        let c = fixtures::client(&env, &actors);
+        let id = fixtures::request_id(&env, 35);
+        let res = c.try_deposit(
+            &1_000_000,
+            &id,
+            &actors.depositor,
+            &Some(actors.destination.clone()),
+            &(env.ledger().timestamp() + 3600),
+        );
+        assert!(res.is_err(), "underfunded pull must fail");
+        let stored = env.as_contract(&actors.contract_id, || {
+            crate::storage::get_request(&env, &id)
+        });
+        assert_eq!(stored, None);
+        let stats = env.as_contract(&actors.contract_id, || crate::storage::get_stats(&env));
+        assert_eq!(stats.lifetime_volume, 0);
+        assert_eq!(env.events().all().events().len(), 0);
+    }
 }
