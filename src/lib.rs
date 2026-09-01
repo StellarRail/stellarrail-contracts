@@ -297,6 +297,13 @@ impl EscrowContract {
         }
         Ok(out)
     }
+
+    /// Flip the emergency stop (admin only). While paused, `deposit`,
+    /// `release`, and `refund` fail `Paused`; `expire` keeps working so
+    /// funds always remain rescuable. Emits `Paused` / `Unpaused`.
+    pub fn set_paused(env: Env, caller: Address, paused: bool) -> Result<(), EscrowError> {
+        admin::do_set_paused(&env, &caller, paused)
+    }
 }
 
 #[cfg(test)]
@@ -859,5 +866,67 @@ mod test {
         let stats = env.as_contract(&actors.contract_id, || crate::storage::get_stats(&env));
         assert_eq!(stats.lifetime_volume, 0);
         assert_eq!(env.events().all().events().len(), 0);
+    }
+
+    #[test]
+    fn pause_blocks_mutations_but_not_expire() {
+        use soroban_sdk::testutils::{Events as _, Ledger as _};
+        let (env, actors) = setup();
+        let id = fund_and_deposit(&env, &actors, 36, 10_000_000);
+        let c = fixtures::client(&env, &actors);
+
+        c.set_paused(&actors.admin, &true);
+        // One Paused event.
+        assert_eq!(
+            env.events()
+                .all()
+                .filter_by_contract(&actors.contract_id)
+                .events()
+                .len(),
+            1
+        );
+
+        // Mutations blocked with typed Paused.
+        let deposit_res = c.try_deposit(
+            &1_000_000,
+            &fixtures::request_id(&env, 37),
+            &actors.depositor,
+            &Some(actors.destination.clone()),
+            &(env.ledger().timestamp() + 3600),
+        );
+        assert_eq!(deposit_res, Err(Ok(EscrowError::Paused)));
+        assert_eq!(
+            c.try_release(&actors.admin, &id),
+            Err(Ok(EscrowError::Paused))
+        );
+        assert_eq!(
+            c.try_refund(&actors.admin, &id),
+            Err(Ok(EscrowError::Paused))
+        );
+
+        // Expire still rescues past-due funds while paused.
+        env.ledger().set_timestamp(env.ledger().timestamp() + 7200);
+        let req = c.expire(&id);
+        assert_eq!(req.status, EscrowStatus::Expired);
+    }
+
+    #[test]
+    fn unpause_resumes_and_emits() {
+        use soroban_sdk::testutils::Events as _;
+        let (env, actors) = setup();
+        let c = fixtures::client(&env, &actors);
+        c.set_paused(&actors.admin, &true);
+        c.set_paused(&actors.admin, &false);
+        // The last invocation (unpause) emitted exactly one Unpaused event.
+        assert_eq!(
+            env.events()
+                .all()
+                .filter_by_contract(&actors.contract_id)
+                .events()
+                .len(),
+            1
+        );
+        // Mutations work again.
+        fund_and_deposit(&env, &actors, 38, 10_000_000);
     }
 }
