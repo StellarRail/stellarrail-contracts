@@ -323,6 +323,25 @@ impl EscrowContract {
     pub fn set_signer(env: Env, caller: Address, new_signer: Address) -> Result<(), EscrowError> {
         admin::do_set_signer(&env, &caller, &new_signer)
     }
+
+    /// Storage schema version. The release workflow refuses to cut a release
+    /// whose tag disagrees with this value.
+    pub fn version(env: Env) -> u32 {
+        let _ = env;
+        SCHEMA_VERSION
+    }
+
+    /// Upgrade the contract WASM (admin only). State is preserved: all data
+    /// lives in instance-independent persistent storage keyed by `DataKey`,
+    /// so a new `SCHEMA_VERSION` must keep every key readable (see
+    /// `docs/UPGRADE.md`).
+    pub fn migrate(
+        env: Env,
+        caller: Address,
+        new_wasm_hash: BytesN<32>,
+    ) -> Result<(), EscrowError> {
+        admin::do_migrate(&env, &caller, &new_wasm_hash)
+    }
 }
 
 #[cfg(test)]
@@ -1046,5 +1065,59 @@ mod test {
         c.set_paused(&new_admin, &false);
         let events = env.events().all().filter_by_contract(&actors.contract_id);
         assert_eq!(events.events().len(), 1);
+    }
+
+    #[test]
+    fn version_returns_schema_version() {
+        let (env, actors) = setup();
+        let c = fixtures::client(&env, &actors);
+        assert_eq!(c.version(), SCHEMA_VERSION);
+        assert_eq!(c.version(), 1);
+    }
+
+    #[test]
+    fn migrate_requires_admin() {
+        use soroban_sdk::testutils::Address as _;
+        use soroban_sdk::IntoVal;
+        let (env, actors) = setup();
+        fixtures::clear_auth_mock(&env);
+        let rogue = Address::generate(&env);
+        let hash = BytesN::from_array(&env, &[0xab; 32]);
+        fixtures::mock_single_call(
+            &env,
+            &actors.contract_id,
+            "migrate",
+            (rogue.clone(), hash.clone()).into_val(&env),
+            &rogue,
+        );
+        let c = fixtures::client(&env, &actors);
+        assert_eq!(
+            c.try_migrate(&rogue, &hash),
+            Err(Ok(EscrowError::Unauthorized))
+        );
+    }
+
+    #[test]
+    fn migrate_by_admin_passes_auth_gate() {
+        use soroban_sdk::IntoVal;
+        // No code was ever uploaded for this hash, so the host upgrade
+        // itself fails — but it must fail PAST the auth gate (anything but
+        // Unauthorized), proving admins can reach `migrate` while rogues
+        // cannot (see `migrate_requires_admin`). A full state-preserving
+        // upgrade is drilled in ISSUE-050 against real built WASM.
+        let (env, actors) = setup();
+        let hash = BytesN::from_array(&env, &[0xab; 32]);
+        fixtures::clear_auth_mock(&env);
+        fixtures::mock_single_call(
+            &env,
+            &actors.contract_id,
+            "migrate",
+            (actors.admin.clone(), hash.clone()).into_val(&env),
+            &actors.admin,
+        );
+        let c = fixtures::client(&env, &actors);
+        let res = c.try_migrate(&actors.admin, &hash);
+        assert!(res.is_err());
+        assert_ne!(res, Err(Ok(EscrowError::Unauthorized)));
     }
 }
