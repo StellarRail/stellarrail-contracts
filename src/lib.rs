@@ -304,6 +304,25 @@ impl EscrowContract {
     pub fn set_paused(env: Env, caller: Address, paused: bool) -> Result<(), EscrowError> {
         admin::do_set_paused(&env, &caller, paused)
     }
+
+    /// Stage a new admin (current admin only). Takes effect on `accept_admin`.
+    pub fn transfer_admin(
+        env: Env,
+        caller: Address,
+        new_admin: Address,
+    ) -> Result<(), EscrowError> {
+        admin::do_transfer_admin(&env, &caller, &new_admin)
+    }
+
+    /// Complete admin rotation: the staged admin authorizes acceptance.
+    pub fn accept_admin(env: Env, caller: Address) -> Result<(), EscrowError> {
+        admin::do_accept_admin(&env, &caller)
+    }
+
+    /// Rotate the signer (admin only). The old signer is invalid immediately.
+    pub fn set_signer(env: Env, caller: Address, new_signer: Address) -> Result<(), EscrowError> {
+        admin::do_set_signer(&env, &caller, &new_signer)
+    }
 }
 
 #[cfg(test)]
@@ -928,5 +947,104 @@ mod test {
         );
         // Mutations work again.
         fund_and_deposit(&env, &actors, 38, 10_000_000);
+    }
+
+    #[test]
+    fn signer_rotation_invalidates_old_signer() {
+        use soroban_sdk::testutils::{Address as _, Events as _};
+        let (env, actors) = setup();
+        let id = fund_and_deposit(&env, &actors, 39, 10_000_000);
+        let c = fixtures::client(&env, &actors);
+
+        let new_signer = Address::generate(&env);
+        c.set_signer(&actors.admin, &new_signer);
+        // One SignerUpdated event on the last call.
+        assert_eq!(
+            env.events()
+                .all()
+                .filter_by_contract(&actors.contract_id)
+                .events()
+                .len(),
+            1
+        );
+
+        // New signer settles a fresh request...
+        let id2 = fund_and_deposit(&env, &actors, 40, 5_000_000);
+        let req = c.release(&new_signer, &id2);
+        assert_eq!(req.status, EscrowStatus::Released);
+
+        // ...but the old signer is immediately unauthorized (typed).
+        fixtures::clear_auth_mock(&env);
+        fixtures::mock_release(&env, &actors, &actors.signer, &id);
+        let res = c.try_release(&actors.signer, &id);
+        assert_eq!(res, Err(Ok(EscrowError::Unauthorized)));
+    }
+
+    #[test]
+    fn admin_rotation_two_step() {
+        use soroban_sdk::testutils::{Address as _, Events as _};
+        use soroban_sdk::{IntoVal, Val, Vec as SdkVec};
+        let (env, actors) = fixtures::setup_initialized();
+        fixtures::clear_auth_mock(&env);
+        let c = fixtures::client(&env, &actors);
+        let new_admin = Address::generate(&env);
+        let rogue = Address::generate(&env);
+
+        // Every privileged call below installs its own exact mock.
+        let mock = |fn_name: &str, args: SdkVec<Val>, caller: &Address| {
+            fixtures::mock_single_call(&env, &actors.contract_id, fn_name, args, caller);
+        };
+
+        // Stage rotation as the current admin.
+        mock(
+            "transfer_admin",
+            (actors.admin.clone(), new_admin.clone()).into_val(&env),
+            &actors.admin,
+        );
+        c.transfer_admin(&actors.admin, &new_admin);
+
+        // Staging hands over nothing yet: old admin still pauses.
+        mock(
+            "set_paused",
+            (actors.admin.clone(), true).into_val(&env),
+            &actors.admin,
+        );
+        c.set_paused(&actors.admin, &true);
+
+        // Acceptance by anyone else fails typed.
+        mock("accept_admin", (rogue.clone(),).into_val(&env), &rogue);
+        assert_eq!(
+            c.try_accept_admin(&rogue),
+            Err(Ok(EscrowError::Unauthorized))
+        );
+
+        // Staged admin accepts.
+        mock(
+            "accept_admin",
+            (new_admin.clone(),).into_val(&env),
+            &new_admin,
+        );
+        c.accept_admin(&new_admin);
+
+        // Old admin is now unauthorized...
+        mock(
+            "set_paused",
+            (actors.admin.clone(), false).into_val(&env),
+            &actors.admin,
+        );
+        assert_eq!(
+            c.try_set_paused(&actors.admin, &false),
+            Err(Ok(EscrowError::Unauthorized))
+        );
+
+        // ...and the new admin governs (unpauses).
+        mock(
+            "set_paused",
+            (new_admin.clone(), false).into_val(&env),
+            &new_admin,
+        );
+        c.set_paused(&new_admin, &false);
+        let events = env.events().all().filter_by_contract(&actors.contract_id);
+        assert_eq!(events.events().len(), 1);
     }
 }
