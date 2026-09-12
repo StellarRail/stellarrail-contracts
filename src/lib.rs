@@ -18,22 +18,16 @@
 
 #![no_std]
 
-// Staged: role helpers are wired entrypoint-by-entrypoint across Phase B.
-// Removed at ISSUE-028 (full clippy sweep proves every helper is used).
-#[allow(dead_code)]
+// All role helpers are now wired to entrypoints (Phase B complete).
 mod admin;
 mod errors;
 pub mod events;
 pub mod storage;
-// Staged: token helpers + fixtures are wired across Phase B (ISSUE-013+).
-// Removed at ISSUE-028 via full clippy sweep.
-#[allow(dead_code)]
 mod token;
 pub mod types;
 mod validation;
 
 #[cfg(test)]
-#[allow(dead_code)] // staged: fixtures consumed across Phase B tests
 pub(crate) mod fixtures;
 
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Vec};
