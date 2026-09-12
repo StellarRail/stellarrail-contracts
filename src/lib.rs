@@ -1114,4 +1114,96 @@ mod test {
         assert!(res.is_err());
         assert_ne!(res, Err(Ok(EscrowError::Unauthorized)));
     }
+
+    /// Full access-control matrix: admin / signer / stranger ×
+    /// release / refund / expire / set_paused (12 combos).
+    ///
+    /// Mirrors `docs/AUTH_MATRIX.md`. Stranger calls install an exact mock
+    /// (auth passes) so the *role* check — not the host auth trap — is what
+    /// denies them with typed `Unauthorized`.
+    #[test]
+    fn auth_matrix() {
+        use soroban_sdk::testutils::{Address as _, Ledger as _};
+        use soroban_sdk::IntoVal;
+        let (env, actors) = setup();
+        let c = fixtures::client(&env, &actors);
+        let rogue = Address::generate(&env);
+
+        // Nine funded requests, all Locked.
+        for byte in 50u8..59u8 {
+            fund_and_deposit(&env, &actors, byte, 10_000_000);
+        }
+        let id = |b: u8| fixtures::request_id(&env, b);
+
+        // release: admin + signer settle; stranger is denied typed.
+        assert_eq!(
+            c.release(&actors.admin, &id(50)).status,
+            EscrowStatus::Released
+        );
+        assert_eq!(
+            c.release(&actors.signer, &id(51)).status,
+            EscrowStatus::Released
+        );
+        fixtures::clear_auth_mock(&env);
+        fixtures::mock_release(&env, &actors, &rogue, &id(52));
+        assert_eq!(
+            c.try_release(&rogue, &id(52)),
+            Err(Ok(EscrowError::Unauthorized))
+        );
+
+        // refund: same shape.
+        env.mock_all_auths();
+        assert_eq!(
+            c.refund(&actors.admin, &id(53)).status,
+            EscrowStatus::Refunded
+        );
+        assert_eq!(
+            c.refund(&actors.signer, &id(54)).status,
+            EscrowStatus::Refunded
+        );
+        fixtures::clear_auth_mock(&env);
+        fixtures::mock_refund(&env, &actors, &rogue, &id(55));
+        assert_eq!(
+            c.try_refund(&rogue, &id(55)),
+            Err(Ok(EscrowError::Unauthorized))
+        );
+
+        // set_paused: admin only.
+        env.mock_all_auths();
+        c.set_paused(&actors.admin, &true);
+        fixtures::clear_auth_mock(&env);
+        fixtures::mock_single_call(
+            &env,
+            &actors.contract_id,
+            "set_paused",
+            (actors.signer.clone(), true).into_val(&env),
+            &actors.signer,
+        );
+        assert_eq!(
+            c.try_set_paused(&actors.signer, &true),
+            Err(Ok(EscrowError::Unauthorized))
+        );
+        fixtures::mock_single_call(
+            &env,
+            &actors.contract_id,
+            "set_paused",
+            (rogue.clone(), true).into_val(&env),
+            &rogue,
+        );
+        assert_eq!(
+            c.try_set_paused(&rogue, &true),
+            Err(Ok(EscrowError::Unauthorized))
+        );
+
+        // expire: permissionless — succeeds under blanket mock, under an
+        // unrelated single mock, and with no mocks at all.
+        env.mock_all_auths();
+        env.ledger().set_timestamp(env.ledger().timestamp() + 7200);
+        assert_eq!(c.expire(&id(56)).status, EscrowStatus::Expired);
+        fixtures::clear_auth_mock(&env);
+        fixtures::mock_release(&env, &actors, &rogue, &id(57));
+        assert_eq!(c.expire(&id(57)).status, EscrowStatus::Expired);
+        fixtures::clear_auth_mock(&env);
+        assert_eq!(c.expire(&id(58)).status, EscrowStatus::Expired);
+    }
 }
