@@ -1208,4 +1208,56 @@ mod test {
         fixtures::clear_auth_mock(&env);
         assert_eq!(c.expire(&id(58)).status, EscrowStatus::Expired);
     }
+
+    /// Double-spend impossibility: every second attempt fails AND moves no
+    /// funds (balances bit-identical before/after the rejected call).
+    #[test]
+    fn edge_double_ops_move_no_funds() {
+        use soroban_sdk::testutils::Ledger as _;
+        let (env, actors) = setup();
+        let c = fixtures::client(&env, &actors);
+        let bal = |who: &Address| fixtures::balance(&env, &actors, who);
+
+        // Double deposit: pulled exactly once.
+        let id_a = fund_and_deposit(&env, &actors, 60, 10_000_000);
+        let dep_after_first = bal(&actors.depositor);
+        let res = c.try_deposit(
+            &10_000_000,
+            &id_a,
+            &actors.depositor,
+            &Some(actors.destination.clone()),
+            &(env.ledger().timestamp() + 3600),
+        );
+        assert_eq!(res, Err(Ok(EscrowError::AlreadyExists)));
+        assert_eq!(bal(&actors.depositor), dep_after_first);
+
+        // Double release: destination paid exactly once.
+        c.release(&actors.admin, &id_a);
+        let dest_paid = bal(&actors.destination);
+        assert_eq!(
+            c.try_release(&actors.admin, &id_a),
+            Err(Ok(EscrowError::InvalidState))
+        );
+        assert_eq!(bal(&actors.destination), dest_paid);
+        assert_eq!(bal(&actors.contract_id), 0);
+
+        // Double refund: depositor refunded exactly once.
+        let id_b = fund_and_deposit(&env, &actors, 61, 7_000_000);
+        c.refund(&actors.signer, &id_b);
+        let dep_refunded = bal(&actors.depositor);
+        assert_eq!(
+            c.try_refund(&actors.signer, &id_b),
+            Err(Ok(EscrowError::InvalidState))
+        );
+        assert_eq!(bal(&actors.depositor), dep_refunded);
+
+        // Double expire: depositor rescued exactly once.
+        let id_c = fund_and_deposit(&env, &actors, 62, 5_000_000);
+        env.ledger().set_timestamp(env.ledger().timestamp() + 7200);
+        c.expire(&id_c);
+        let dep_expired = bal(&actors.depositor);
+        assert_eq!(c.try_expire(&id_c), Err(Ok(EscrowError::InvalidState)));
+        assert_eq!(bal(&actors.depositor), dep_expired);
+        assert_eq!(bal(&actors.contract_id), 0);
+    }
 }
