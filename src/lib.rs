@@ -25,7 +25,9 @@ pub mod events;
 pub mod storage;
 mod token;
 pub mod types;
-mod validation;
+/// Pure input checks (amounts, deadlines, caps). Public so integrators can
+/// pre-validate; also the single source of truth for bound constants.
+pub mod validation;
 
 #[cfg(test)]
 pub(crate) mod fixtures;
