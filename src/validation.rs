@@ -25,6 +25,11 @@ pub const MAX_LIST_LIMIT: u32 = 50;
 /// (50 000 000 000 × 10^7) rejects anything above the plausible XLM supply
 /// long before `i128` arithmetic could overflow; every counter update
 /// additionally uses `checked_*` and maps failure to `Overflow`.
+///
+/// # Errors
+///
+/// Returns [`EscrowError::InvalidAmount`] for `amount <= 0` or above
+/// `MAX_AMOUNT`.
 pub fn check_amount(amount: i128) -> Result<(), EscrowError> {
     if amount <= 0 || amount > MAX_AMOUNT {
         return Err(EscrowError::InvalidAmount);
@@ -40,6 +45,12 @@ pub fn check_amount(amount: i128) -> Result<(), EscrowError> {
 /// 300s grace recommendation (see `docs/STORAGE.md` clock-skew note) and
 /// should use >= 1h deadlines in production; `MIN_DEADLINE_SECS` (60s)
 /// exists so short-lived test drills stay possible.
+///
+/// # Errors
+///
+/// Returns [`EscrowError::InvalidDeadline`] when `deadline` is not after
+/// `now`, is less than `MIN_DEADLINE_SECS` ahead, or more than
+/// `MAX_DEADLINE_SECS` ahead.
 pub fn check_deadline(deadline: u64, now: u64) -> Result<(), EscrowError> {
     if deadline <= now {
         return Err(EscrowError::InvalidDeadline);

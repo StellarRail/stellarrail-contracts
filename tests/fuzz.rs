@@ -42,7 +42,7 @@ fn fuzz_deposit_inputs() {
     // MAX_AMOUNT each ≈ 2.5e20), so a pull can never trap on balance.
     StellarAssetClient::new(&env, &token).mint(&depositor, &1_000_000_000_000_000_000_000_000_000);
 
-    let mut rng = Rng(0x9E3779B97F4A7C15);
+    let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
     let mut ok_count = 0u32;
     let mut already_exists = 0u32;
     let mut invalid_amount = 0u32;
@@ -52,13 +52,13 @@ fn fuzz_deposit_inputs() {
         let r = rng.next();
         let amount: i128 = match r % 8 {
             0 => 0,
-            1 => -(((r >> 3) % 1_000_000) as i128) - 1,
+            1 => -i128::from((r >> 3) % 1_000_000) - 1,
             2 => 1,
             3 => MAX_AMOUNT,
             4 => MAX_AMOUNT + 1,
             5 => i128::MAX,
-            6 => (((r >> 3) % 1_000_000_000_000) as i128) + 1,
-            _ => (((r >> 3) % (MAX_AMOUNT as u64 * 2)) as i128) + 1,
+            6 => i128::from((r >> 3) % 1_000_000_000_000) + 1,
+            _ => i128::from((r >> 3) % (u64::try_from(MAX_AMOUNT).unwrap() * 2)) + 1,
         };
         let deadline: u64 = match (r >> 5) % 6 {
             0 => now - (r % 100_000) - 1,
@@ -69,7 +69,7 @@ fn fuzz_deposit_inputs() {
             _ => now + 10 * 365 * 24 * 60 * 60,
         };
         // Tiny id space (500 values) forces AlreadyExists collisions.
-        let id_byte = ((r >> 11) % 500) as u8;
+        let id_byte = u8::try_from((r >> 11) % 500).unwrap();
         let id = BytesN::from_array(&env, &[id_byte; 32]);
         let dest = if r.is_multiple_of(17) {
             None

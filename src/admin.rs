@@ -18,6 +18,10 @@ fn initialized_admin(env: &Env) -> Result<Address, EscrowError> {
 }
 
 /// Fail unless `caller` authed and is the admin.
+///
+/// # Errors
+///
+/// Returns `NotFound` (uninitialized) or `Unauthorized`.
 pub fn require_admin(env: &Env, caller: &Address) -> Result<Address, EscrowError> {
     caller.require_auth();
     let admin = initialized_admin(env)?;
@@ -28,6 +32,10 @@ pub fn require_admin(env: &Env, caller: &Address) -> Result<Address, EscrowError
 }
 
 /// Fail unless `caller` authed and is the admin or the signer.
+///
+/// # Errors
+///
+/// Returns `NotFound` (uninitialized) or `Unauthorized`.
 pub fn require_admin_or_signer(env: &Env, caller: &Address) -> Result<Address, EscrowError> {
     caller.require_auth();
     let admin = initialized_admin(env)?;
@@ -39,6 +47,10 @@ pub fn require_admin_or_signer(env: &Env, caller: &Address) -> Result<Address, E
 }
 
 /// One-time setup. `admin` authorizes; double init fails `AlreadyExists`.
+///
+/// # Errors
+///
+/// Returns `AlreadyExists` on second call.
 pub fn do_initialize(
     env: &Env,
     admin: &Address,
@@ -59,6 +71,10 @@ pub fn do_initialize(
 }
 
 /// Flip the emergency stop (admin only). `expire` is unaffected.
+///
+/// # Errors
+///
+/// Returns `NotFound` (uninitialized) or `Unauthorized`.
 pub fn do_set_paused(env: &Env, caller: &Address, paused: bool) -> Result<(), EscrowError> {
     require_admin(env, caller)?;
     storage::set_paused(env, paused);
@@ -67,6 +83,10 @@ pub fn do_set_paused(env: &Env, caller: &Address, paused: bool) -> Result<(), Es
 }
 
 /// Stage a new admin (admin only). Takes effect on `accept_admin`.
+///
+/// # Errors
+///
+/// Returns `NotFound` (uninitialized) or `Unauthorized`.
 pub fn do_transfer_admin(
     env: &Env,
     caller: &Address,
@@ -79,6 +99,11 @@ pub fn do_transfer_admin(
 }
 
 /// Complete rotation: the staged admin authorizes acceptance.
+///
+/// # Errors
+///
+/// Returns `NotFound` (no rotation staged) or `Unauthorized` (caller is not
+/// the staged admin).
 pub fn do_accept_admin(env: &Env, caller: &Address) -> Result<(), EscrowError> {
     caller.require_auth();
     let pending = storage::get_pending_admin(env).ok_or(EscrowError::NotFound)?;
@@ -92,6 +117,10 @@ pub fn do_accept_admin(env: &Env, caller: &Address) -> Result<(), EscrowError> {
 }
 
 /// Rotate the signer (admin only). The old signer is invalid immediately.
+///
+/// # Errors
+///
+/// Returns `NotFound` (uninitialized) or `Unauthorized`.
 pub fn do_set_signer(env: &Env, caller: &Address, new_signer: &Address) -> Result<(), EscrowError> {
     require_admin(env, caller)?;
     let old = storage::get_signer(env).ok_or(EscrowError::NotFound)?;
@@ -101,6 +130,10 @@ pub fn do_set_signer(env: &Env, caller: &Address, new_signer: &Address) -> Resul
 }
 
 /// Upgrade the contract WASM (admin only).
+///
+/// # Errors
+///
+/// Returns `NotFound` (uninitialized) or `Unauthorized`.
 pub fn do_migrate(
     env: &Env,
     caller: &Address,

@@ -3,7 +3,7 @@
 //! Every write goes through a helper below so TTL extension cannot be
 //! forgotten. Reads never mutate TTL (views stay read-only).
 //!
-//! Ledger timing: Stellar closes a ledger ~every 5s → ~17_280 ledgers/day.
+//! Ledger timing: Stellar closes a ledger ~every 5s → ~`17_280` ledgers/day.
 
 use soroban_sdk::{contracttype, Address, BytesN, Env, Vec};
 
@@ -59,6 +59,7 @@ pub struct Stats {
 
 impl Stats {
     /// Zero counters for `initialize`.
+    #[must_use]
     pub fn zeroed() -> Stats {
         Stats {
             locked_count: 0,
@@ -77,6 +78,7 @@ fn extend(env: &Env, key: &DataKey) {
 }
 
 /// Read a request without touching TTL (views stay read-only).
+#[must_use]
 pub fn get_request(env: &Env, request_id: &BytesN<32>) -> Option<EscrowRequest> {
     env.storage()
         .persistent()
@@ -117,6 +119,7 @@ fn contains_id(ids: &Vec<BytesN<32>>, target: &BytesN<32>) -> bool {
 }
 
 /// Paginated id registry (raw; filtering happens in `list_requests`).
+#[must_use]
 pub fn get_all_ids(env: &Env) -> Vec<BytesN<32>> {
     env.storage()
         .persistent()
@@ -134,6 +137,7 @@ fn set_addr(env: &Env, key: DataKey, value: &Address) {
 }
 
 /// Contract admin (set once by `initialize`, moved by two-step rotation).
+#[must_use]
 pub fn get_admin(env: &Env) -> Option<Address> {
     get_addr(env, &DataKey::Admin)
 }
@@ -144,6 +148,7 @@ pub fn set_admin(env: &Env, admin: &Address) {
 }
 
 /// Authorized signer (second release/refund authority).
+#[must_use]
 pub fn get_signer(env: &Env) -> Option<Address> {
     get_addr(env, &DataKey::Signer)
 }
@@ -154,6 +159,7 @@ pub fn set_signer(env: &Env, signer: &Address) {
 }
 
 /// Accepted SAC XLM token contract.
+#[must_use]
 pub fn get_token(env: &Env) -> Option<Address> {
     get_addr(env, &DataKey::Token)
 }
@@ -164,6 +170,7 @@ pub fn set_token(env: &Env, token: &Address) {
 }
 
 /// Pending admin for two-step rotation (`None` when no rotation in flight).
+#[must_use]
 pub fn get_pending_admin(env: &Env) -> Option<Address> {
     get_addr(env, &DataKey::PendingAdmin)
 }
@@ -180,6 +187,7 @@ pub fn clear_pending_admin(env: &Env) {
 
 /// Emergency stop flag. `true` blocks deposit/release/refund; `expire`
 /// stays open so funds remain rescuable.
+#[must_use]
 pub fn is_paused(env: &Env) -> bool {
     env.storage()
         .persistent()
@@ -195,6 +203,7 @@ pub fn set_paused(env: &Env, paused: bool) {
 }
 
 /// Aggregate counters (zeroed at `initialize`).
+#[must_use]
 pub fn get_stats(env: &Env) -> Stats {
     env.storage()
         .persistent()

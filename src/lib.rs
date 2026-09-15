@@ -1,4 +1,4 @@
-//! StellarRail escrow contract.
+//! `StellarRail` escrow contract.
 //!
 //! Module responsibilities:
 //!
@@ -17,6 +17,11 @@
 //! TTL extended on every write, exactly one event per mutation.
 
 #![no_std]
+// Contract signatures must take `Env`, `Address`, `BytesN`, and `Option`
+// by value (Soroban host dispatch); `needless_pass_by_value` therefore
+// cannot apply to entrypoints, and helpers mirror entrypoint signatures
+// for consistency.
+#![allow(clippy::needless_pass_by_value)]
 
 // All role helpers are now wired to entrypoints (Phase B complete).
 mod admin;
@@ -44,6 +49,10 @@ pub struct EscrowContract;
 impl EscrowContract {
     /// One-time setup: roles + accepted SAC token. Second call fails
     /// `AlreadyExists`. `admin` must authorize.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EscrowError::AlreadyExists`] on second call.
     pub fn initialize(
         env: Env,
         admin: Address,
@@ -56,6 +65,11 @@ impl EscrowContract {
     /// Lock `amount` stroops for `request_id`. Pulls the SAC token from
     /// `depositor` (who must authorize), persists a `Locked` request, and
     /// emits `FundsLocked`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Paused`, `InvalidAmount`, `AlreadyExists`, `InvalidDeadline`,
+    /// `NotFound` (uninitialized), or `Overflow` per `docs/ERRORS.md`.
     pub fn deposit(
         env: Env,
         amount: i128,
@@ -116,6 +130,11 @@ impl EscrowContract {
     /// Settle a `Locked` request to its destination. Only the admin or the
     /// signer may call (`caller` must authorize). Past the deadline the
     /// request can only be expired — this returns `Expired` as a hint.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Paused`, `NotFound`, `InvalidState`, `Expired`,
+    /// `Unauthorized`, or `Overflow` per `docs/ERRORS.md`.
     pub fn release(
         env: Env,
         caller: Address,
@@ -174,6 +193,11 @@ impl EscrowContract {
     /// Safety note: `expire` already transfers funds when it marks a request
     /// `Expired`, so `Expired` is terminal and NOT refundable — refunding from
     /// `Expired` would pay the depositor twice.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Paused`, `NotFound`, `InvalidState`, `Unauthorized`, or
+    /// `Overflow` per `docs/ERRORS.md`.
     pub fn refund(
         env: Env,
         caller: Address,
@@ -215,6 +239,11 @@ impl EscrowContract {
     /// pays the original depositor, so there is nothing to steal. Requires
     /// `now > deadline` and `Locked` status; works while paused so funds
     /// always remain rescuable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `NotFound`, `InvalidState`, `NotExpired`, or `Overflow` per
+    /// `docs/ERRORS.md`.
     pub fn expire(env: Env, request_id: BytesN<32>) -> Result<EscrowRequest, EscrowError> {
         let mut request = storage::get_request(&env, &request_id).ok_or(EscrowError::NotFound)?;
         if request.status != EscrowStatus::Locked {
@@ -249,6 +278,10 @@ impl EscrowContract {
     }
 
     /// Read a request. No auth, no writes, no TTL bump (strictly read-only).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EscrowError::NotFound`] for an unknown `request_id`.
     pub fn get_request(env: Env, request_id: BytesN<32>) -> Result<EscrowRequest, EscrowError> {
         storage::get_request(&env, &request_id).ok_or(EscrowError::NotFound)
     }
@@ -259,6 +292,11 @@ impl EscrowContract {
     /// filtered scans walk pages until a short page. `limit` is capped at
     /// `MAX_LIST_LIMIT` (50); `limit == 0` or `offset` past the end yields
     /// an empty page. Read-only.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidAmount` when `limit` exceeds the cap, or `Overflow`
+    /// when `offset + limit` overflows `u32`.
     pub fn list_requests(
         env: Env,
         status_filter: Option<EscrowStatus>,
@@ -297,11 +335,19 @@ impl EscrowContract {
     /// Flip the emergency stop (admin only). While paused, `deposit`,
     /// `release`, and `refund` fail `Paused`; `expire` keeps working so
     /// funds always remain rescuable. Emits `Paused` / `Unpaused`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `NotFound` (uninitialized) or `Unauthorized` (not admin).
     pub fn set_paused(env: Env, caller: Address, paused: bool) -> Result<(), EscrowError> {
         admin::do_set_paused(&env, &caller, paused)
     }
 
     /// Stage a new admin (current admin only). Takes effect on `accept_admin`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `NotFound` (uninitialized) or `Unauthorized` (not admin).
     pub fn transfer_admin(
         env: Env,
         caller: Address,
@@ -311,17 +357,27 @@ impl EscrowContract {
     }
 
     /// Complete admin rotation: the staged admin authorizes acceptance.
+    ///
+    /// # Errors
+    ///
+    /// Returns `NotFound` (no rotation staged) or `Unauthorized` (caller is
+    /// not the staged admin).
     pub fn accept_admin(env: Env, caller: Address) -> Result<(), EscrowError> {
         admin::do_accept_admin(&env, &caller)
     }
 
     /// Rotate the signer (admin only). The old signer is invalid immediately.
+    ///
+    /// # Errors
+    ///
+    /// Returns `NotFound` (uninitialized) or `Unauthorized` (not admin).
     pub fn set_signer(env: Env, caller: Address, new_signer: Address) -> Result<(), EscrowError> {
         admin::do_set_signer(&env, &caller, &new_signer)
     }
 
     /// Storage schema version. The release workflow refuses to cut a release
     /// whose tag disagrees with this value.
+    #[must_use]
     pub fn version(env: Env) -> u32 {
         let _ = env;
         SCHEMA_VERSION
@@ -331,6 +387,10 @@ impl EscrowContract {
     /// lives in instance-independent persistent storage keyed by `DataKey`,
     /// so a new `SCHEMA_VERSION` must keep every key readable (see
     /// `docs/UPGRADE.md`).
+    ///
+    /// # Errors
+    ///
+    /// Returns `NotFound` (uninitialized) or `Unauthorized` (not admin).
     pub fn migrate(
         env: Env,
         caller: Address,
@@ -713,12 +773,12 @@ mod test {
 
     #[test]
     fn expire_after_release_fails() {
+        use soroban_sdk::testutils::Ledger as _;
         let (env, actors) = setup();
         let id = fund_and_deposit(&env, &actors, 24, 10_000_000);
         let c = fixtures::client(&env, &actors);
         c.release(&actors.admin, &id);
         // Push past the deadline: released funds must NOT move again.
-        use soroban_sdk::testutils::Ledger as _;
         env.ledger().set_timestamp(env.ledger().timestamp() + 7200);
         let res = c.try_expire(&id);
         assert_eq!(res, Err(Ok(EscrowError::InvalidState)));
@@ -1118,7 +1178,7 @@ mod test {
     }
 
     /// Full access-control matrix: admin / signer / stranger ×
-    /// release / refund / expire / set_paused (12 combos).
+    /// `release` / `refund` / `expire` / `set_paused` (12 combos).
     ///
     /// Mirrors `docs/AUTH_MATRIX.md`. Stranger calls install an exact mock
     /// (auth passes) so the *role* check — not the host auth trap — is what
@@ -1259,5 +1319,70 @@ mod test {
         assert_eq!(c.try_expire(&id_c), Err(Ok(EscrowError::InvalidState)));
         assert_eq!(bal(&actors.depositor), dep_expired);
         assert_eq!(bal(&actors.contract_id), 0);
+    }
+
+    #[test]
+    fn overflow_deposit_i128_max_rejected() {
+        let (env, actors) = setup();
+        let c = fixtures::client(&env, &actors);
+        let res = c.try_deposit(
+            &i128::MAX,
+            &fixtures::request_id(&env, 63),
+            &actors.depositor,
+            &Some(actors.destination.clone()),
+            &(env.ledger().timestamp() + 3600),
+        );
+        assert_eq!(res, Err(Ok(EscrowError::InvalidAmount)));
+    }
+
+    #[test]
+    fn overflow_release_underflow_guarded() {
+        // Corrupted counter (locked_total = 0 with a live Locked request):
+        // settlement math must fail Overflow, never wrap — and move no funds.
+        let (env, actors) = setup();
+        let amount = 10_000_000;
+        let id = fund_and_deposit(&env, &actors, 64, amount);
+        env.as_contract(&actors.contract_id, || {
+            let mut stats = crate::storage::get_stats(&env);
+            stats.locked_total = 0;
+            stats.locked_count = 0;
+            crate::storage::set_stats(&env, &stats);
+        });
+        let c = fixtures::client(&env, &actors);
+        let dest_before = fixtures::balance(&env, &actors, &actors.destination);
+        assert_eq!(
+            c.try_release(&actors.admin, &id),
+            Err(Ok(EscrowError::Overflow))
+        );
+        assert_eq!(
+            fixtures::balance(&env, &actors, &actors.destination),
+            dest_before
+        );
+        // Request untouched: still Locked.
+        let stored = env.as_contract(&actors.contract_id, || {
+            crate::storage::get_request(&env, &id)
+        });
+        assert_eq!(stored.map(|r| r.status), Some(EscrowStatus::Locked));
+    }
+
+    #[test]
+    fn overflow_deposit_counter_saturated() {
+        // Saturated locked_count: the next deposit fails Overflow atomically.
+        let (env, actors) = setup();
+        fixtures::mint(&env, &actors, &actors.depositor, 1_000_000_000);
+        env.as_contract(&actors.contract_id, || {
+            let mut stats = crate::storage::get_stats(&env);
+            stats.locked_count = u64::MAX;
+            crate::storage::set_stats(&env, &stats);
+        });
+        let c = fixtures::client(&env, &actors);
+        let res = c.try_deposit(
+            &1_000_000,
+            &fixtures::request_id(&env, 65),
+            &actors.depositor,
+            &Some(actors.destination.clone()),
+            &(env.ledger().timestamp() + 3600),
+        );
+        assert_eq!(res, Err(Ok(EscrowError::Overflow)));
     }
 }

@@ -223,7 +223,7 @@ mod test {
     }
 
     fn sym(name: &str) -> ScSymbol {
-        ScSymbol::try_from(name).unwrap_or_else(|_| panic!("bad symbol"))
+        ScSymbol::try_from(name).unwrap_or_else(|()| panic!("bad symbol"))
     }
 
     #[test]
