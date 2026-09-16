@@ -1385,4 +1385,66 @@ mod test {
         );
         assert_eq!(res, Err(Ok(EscrowError::Overflow)));
     }
+
+    /// The whole admin surface denies strangers with typed `Unauthorized`:
+    /// `set_paused`, `set_signer`, `migrate`, `transfer_admin`.
+    /// (`accept_admin` is covered by `admin_rotation_two_step`.)
+    #[test]
+    fn admin_authz_denies_strangers() {
+        use soroban_sdk::testutils::Address as _;
+        use soroban_sdk::IntoVal;
+        let (env, actors) = setup();
+        fixtures::clear_auth_mock(&env);
+        let c = fixtures::client(&env, &actors);
+        let rogue = Address::generate(&env);
+        let mock = |fn_name: &str, args: soroban_sdk::Vec<soroban_sdk::Val>| {
+            fixtures::mock_single_call(&env, &actors.contract_id, fn_name, args, &rogue);
+        };
+
+        mock("set_paused", (rogue.clone(), true).into_val(&env));
+        assert_eq!(
+            c.try_set_paused(&rogue, &true),
+            Err(Ok(EscrowError::Unauthorized))
+        );
+
+        let new_signer = Address::generate(&env);
+        mock(
+            "set_signer",
+            (rogue.clone(), new_signer.clone()).into_val(&env),
+        );
+        assert_eq!(
+            c.try_set_signer(&rogue, &new_signer),
+            Err(Ok(EscrowError::Unauthorized))
+        );
+
+        let hash = BytesN::from_array(&env, &[0xab; 32]);
+        mock("migrate", (rogue.clone(), hash.clone()).into_val(&env));
+        assert_eq!(
+            c.try_migrate(&rogue, &hash),
+            Err(Ok(EscrowError::Unauthorized))
+        );
+
+        let new_admin = Address::generate(&env);
+        mock(
+            "transfer_admin",
+            (rogue.clone(), new_admin.clone()).into_val(&env),
+        );
+        assert_eq!(
+            c.try_transfer_admin(&rogue, &new_admin),
+            Err(Ok(EscrowError::Unauthorized))
+        );
+
+        // And the signer — an operator, not an owner — is denied too.
+        fixtures::mock_single_call(
+            &env,
+            &actors.contract_id,
+            "set_paused",
+            (actors.signer.clone(), true).into_val(&env),
+            &actors.signer,
+        );
+        assert_eq!(
+            c.try_set_paused(&actors.signer, &true),
+            Err(Ok(EscrowError::Unauthorized))
+        );
+    }
 }
