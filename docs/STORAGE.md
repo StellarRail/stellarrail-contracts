@@ -45,3 +45,22 @@ Deadlines compare against `env.ledger().timestamp()` (close time, ~5s
 granularity). The API should treat an escrow as expired only after
 `deadline + 300s` grace to absorb indexer/RPC lag, and should submit
 `expire` with a margin before downstream timeouts.
+
+## Eviction + recovery
+
+Entries live `PERSISTENT_EXTEND_TO` (30d) from their **last write**. A fully
+dormant escrow (no mutation for 30d) can therefore be evicted: `get_request`
+then returns `NotFound`, and `expire` cannot settle it because the record —
+including the depositor address — is gone. The funds themselves are NOT lost:
+they remain in the contract's SAC balance, but v1 has no function to move
+funds without a request record.
+
+Operational rule: **keeper bots must `expire` past-due escrows promptly**
+(days, not weeks, after the deadline). Typical escrows live hours-to-days,
+leaving weeks of TTL grace; only a ~30d-max escrow left completely
+untouched approaches the edge.
+
+If eviction ever strands funds, recovery is a contract upgrade (state is
+preserved across `migrate`) shipping a one-off admin sweep keyed off SAC
+balance deltas, recorded as an ADR. This is accepted residual risk for v1 —
+see `docs/AUDIT_CHECKLIST.md` and `docs/PRODUCTION.md` (keeper monitoring).

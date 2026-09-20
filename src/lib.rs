@@ -1601,4 +1601,47 @@ mod test {
         assert_eq!(bad2, Err(Ok(EscrowError::NotFound)));
         assert_eq!(env.events().all().events().len(), 0);
     }
+
+    /// Every mutation re-extends its entries to the full policy window.
+    #[test]
+    fn ttl_extended_on_every_write() {
+        use crate::storage::{DataKey, PERSISTENT_EXTEND_TO};
+        use soroban_sdk::testutils::storage::Persistent as _;
+        use soroban_sdk::testutils::Ledger as _;
+        let (env, actors) = setup();
+        let c = fixtures::client(&env, &actors);
+        env.ledger().set_sequence_number(2_000_000);
+        let ttl_of = |id: &BytesN<32>| {
+            env.as_contract(&actors.contract_id, || {
+                env.storage()
+                    .persistent()
+                    .get_ttl(&DataKey::Request(id.clone()))
+            })
+        };
+
+        // deposit extends.
+        let id_a = fund_and_deposit(&env, &actors, 80, 10_000_000);
+        assert_eq!(ttl_of(&id_a), PERSISTENT_EXTEND_TO);
+        // release re-extends the same entry.
+        c.release(&actors.admin, &id_a);
+        assert_eq!(ttl_of(&id_a), PERSISTENT_EXTEND_TO);
+
+        // refund extends.
+        let id_b = fund_and_deposit(&env, &actors, 81, 5_000_000);
+        c.refund(&actors.signer, &id_b);
+        assert_eq!(ttl_of(&id_b), PERSISTENT_EXTEND_TO);
+
+        // expire extends.
+        let id_c = fund_and_deposit(&env, &actors, 82, 5_000_000);
+        env.ledger().set_timestamp(env.ledger().timestamp() + 7200);
+        c.expire(&id_c);
+        assert_eq!(ttl_of(&id_c), PERSISTENT_EXTEND_TO);
+
+        // Singleton writes extend too.
+        c.set_paused(&actors.admin, &true);
+        let paused_ttl = env.as_contract(&actors.contract_id, || {
+            env.storage().persistent().get_ttl(&DataKey::Paused)
+        });
+        assert_eq!(paused_ttl, PERSISTENT_EXTEND_TO);
+    }
 }
