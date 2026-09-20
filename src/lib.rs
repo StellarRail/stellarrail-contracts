@@ -1447,4 +1447,158 @@ mod test {
             Err(Ok(EscrowError::Unauthorized))
         );
     }
+
+    /// Decode the single event from the last invocation into
+    /// `(topic, request_id_bytes, amount, actor, ledger_time)`.
+    ///
+    /// Must be called BEFORE any other contract invocation (even a token
+    /// balance read resets the event window).
+    fn decode_lifecycle_event(
+        env: &Env,
+        contract: &Address,
+    ) -> (
+        soroban_sdk::xdr::ScSymbol,
+        [u8; 32],
+        i128,
+        soroban_sdk::xdr::ScAddress,
+        u64,
+    ) {
+        use soroban_sdk::testutils::Events as _;
+        use soroban_sdk::xdr::{ContractEventBody, ScSymbol, ScVal};
+        let all = env.events().all().filter_by_contract(contract);
+        let list = all.events();
+        assert_eq!(list.len(), 1);
+        let (topics, data) = match &list[0].body {
+            ContractEventBody::V0(v0) => (&v0.topics, &v0.data),
+        };
+        let topic = match &topics.as_slice()[0] {
+            ScVal::Symbol(s) => s.clone(),
+            _ => panic!("topic[0] must be a symbol"),
+        };
+        let req_bytes = match &topics.as_slice()[1] {
+            ScVal::Bytes(b) => {
+                let s = b.as_slice();
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(s);
+                arr
+            }
+            _ => panic!("topic[1] must be bytes"),
+        };
+        let ScVal::Map(Some(entries)) = data else {
+            panic!("data must be a map")
+        };
+        let find = |key: &str| -> &ScVal {
+            let want = ScVal::Symbol(ScSymbol::try_from(key).unwrap());
+            &entries.iter().find(|e| e.key == want).unwrap().val
+        };
+        let amount = match find("amount") {
+            ScVal::I128(parts) => (i128::from(parts.hi) << 64) | i128::from(parts.lo),
+            _ => panic!("amount must be i128"),
+        };
+        let actor = match find("actor") {
+            ScVal::Address(a) => a.clone(),
+            _ => panic!("actor must be an address"),
+        };
+        let ledger_time = match find("ledger_time") {
+            ScVal::U64(t) => *t,
+            _ => panic!("ledger_time must be u64"),
+        };
+        (topic, req_bytes, amount, actor, ledger_time)
+    }
+
+    fn sc_symbol(name: &str) -> soroban_sdk::xdr::ScSymbol {
+        soroban_sdk::xdr::ScSymbol::try_from(name).unwrap()
+    }
+
+    fn sc_address_of(addr: &Address) -> soroban_sdk::xdr::ScAddress {
+        addr.into()
+    }
+
+    #[test]
+    fn events_suite_deposit_payload() {
+        let (env, actors) = setup();
+        let amount = 42_000_000;
+        let id = fund_and_deposit(&env, &actors, 70, amount);
+        let (topic, req_bytes, evt_amount, actor, time) =
+            decode_lifecycle_event(&env, &actors.contract_id);
+        assert_eq!(topic, sc_symbol("funds_locked"));
+        assert_eq!(req_bytes, id.to_array());
+        assert_eq!(evt_amount, amount);
+        assert_eq!(actor, sc_address_of(&actors.depositor));
+        assert_eq!(time, env.ledger().timestamp());
+    }
+
+    #[test]
+    fn events_suite_release_payload() {
+        let (env, actors) = setup();
+        let amount = 11_000_000;
+        let id = fund_and_deposit(&env, &actors, 71, amount);
+        let c = fixtures::client(&env, &actors);
+        c.release(&actors.admin, &id);
+        let (topic, req_bytes, evt_amount, actor, time) =
+            decode_lifecycle_event(&env, &actors.contract_id);
+        assert_eq!(topic, sc_symbol("payment_released"));
+        assert_eq!(req_bytes, id.to_array());
+        assert_eq!(evt_amount, amount);
+        assert_eq!(actor, sc_address_of(&actors.admin));
+        assert_eq!(time, env.ledger().timestamp());
+    }
+
+    #[test]
+    fn events_suite_refund_payload() {
+        let (env, actors) = setup();
+        let amount = 9_000_000;
+        let id = fund_and_deposit(&env, &actors, 72, amount);
+        let c = fixtures::client(&env, &actors);
+        c.refund(&actors.signer, &id);
+        let (topic, req_bytes, evt_amount, actor, time) =
+            decode_lifecycle_event(&env, &actors.contract_id);
+        assert_eq!(topic, sc_symbol("payment_refunded"));
+        assert_eq!(req_bytes, id.to_array());
+        assert_eq!(evt_amount, amount);
+        assert_eq!(actor, sc_address_of(&actors.signer));
+        assert_eq!(time, env.ledger().timestamp());
+    }
+
+    #[test]
+    fn events_suite_expire_payload() {
+        use soroban_sdk::testutils::Ledger as _;
+        let (env, actors) = setup();
+        let amount = 7_000_000;
+        let id = fund_and_deposit(&env, &actors, 73, amount);
+        env.ledger().set_timestamp(env.ledger().timestamp() + 7200);
+        let c = fixtures::client(&env, &actors);
+        c.expire(&id);
+        let (topic, req_bytes, evt_amount, actor, time) =
+            decode_lifecycle_event(&env, &actors.contract_id);
+        assert_eq!(topic, sc_symbol("request_expired"));
+        assert_eq!(req_bytes, id.to_array());
+        assert_eq!(evt_amount, amount);
+        // Permissionless expire attributes the refunded depositor.
+        assert_eq!(actor, sc_address_of(&actors.depositor));
+        assert_eq!(time, env.ledger().timestamp());
+    }
+
+    #[test]
+    fn events_suite_failed_calls_emit_nothing() {
+        // Reverted invocations publish no events: absence of an event means
+        // absence of mutation (indexer reliability).
+        use soroban_sdk::testutils::Events as _;
+        let (env, actors) = setup();
+        let c = fixtures::client(&env, &actors);
+        // Failed deposit (zero amount).
+        let bad = c.try_deposit(
+            &0,
+            &fixtures::request_id(&env, 74),
+            &actors.depositor,
+            &Some(actors.destination.clone()),
+            &(env.ledger().timestamp() + 3600),
+        );
+        assert_eq!(bad, Err(Ok(EscrowError::InvalidAmount)));
+        assert_eq!(env.events().all().events().len(), 0);
+        // Failed release (unknown id).
+        let bad2 = c.try_release(&actors.admin, &fixtures::request_id(&env, 75));
+        assert_eq!(bad2, Err(Ok(EscrowError::NotFound)));
+        assert_eq!(env.events().all().events().len(), 0);
+    }
 }
