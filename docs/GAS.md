@@ -53,3 +53,24 @@ Every helper in `src/storage.rs` extends TTL on write
 
 Testnet-measured numbers (per-ledger resource costs) are recorded here after
 ISSUE-051 (`make report-gas`).
+
+## Optimization pass (ISSUE-037)
+
+Reviewed all entrypoints for clone/copy waste, early returns, and loop caps:
+
+- `require_admin_or_signer` now returns `()` — callers only needed the gate,
+  saving one `Address` clone per `release`/`refund`.
+- Error returns precede every storage read (`Paused` → amount → existence →
+  deadline → auth), so invalid calls pay minimum rent.
+- `list_requests` loads at most `limit` requests; the offset window cannot
+  force extra reads.
+- No `clone()` remains that isn't required by ownership (request structs,
+  event payloads, and stored values each have distinct owners).
+
+`cargo clippy -- -W clippy::pedantic` and `-W clippy::perf` are both clean
+(pedantic notes: `needless_pass_by_value` allowed crate-wide — Soroban
+signatures mandate by-value params; see `src/lib.rs`).
+
+WASM size: **19 715 bytes** after the full contract (vs 19 KiB scaffold-era
+snapshot — growth is the Phase B interface itself, well under the 50 KiB
+budget in ISSUE-061).

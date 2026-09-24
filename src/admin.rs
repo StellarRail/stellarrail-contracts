@@ -36,14 +36,14 @@ pub fn require_admin(env: &Env, caller: &Address) -> Result<Address, EscrowError
 /// # Errors
 ///
 /// Returns `NotFound` (uninitialized) or `Unauthorized`.
-pub fn require_admin_or_signer(env: &Env, caller: &Address) -> Result<Address, EscrowError> {
+pub fn require_admin_or_signer(env: &Env, caller: &Address) -> Result<(), EscrowError> {
     caller.require_auth();
     let admin = initialized_admin(env)?;
     let signer = storage::get_signer(env).ok_or(EscrowError::NotFound)?;
     if *caller != admin && *caller != signer {
         return Err(EscrowError::Unauthorized);
     }
-    Ok(caller.clone())
+    Ok(())
 }
 
 /// One-time setup. `admin` authorizes; double init fails `AlreadyExists`.
