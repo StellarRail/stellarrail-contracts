@@ -398,6 +398,14 @@ impl EscrowContract {
     ) -> Result<(), EscrowError> {
         admin::do_migrate(&env, &caller, &new_wasm_hash)
     }
+
+    /// O(1) aggregates for dashboards and reconciliation: counts and stroop
+    /// totals maintained atomically with every request write (never a scan).
+    /// Read-only.
+    #[must_use]
+    pub fn get_stats(env: Env) -> storage::Stats {
+        storage::get_stats(&env)
+    }
 }
 
 #[cfg(test)]
@@ -1643,5 +1651,40 @@ mod test {
             env.storage().persistent().get_ttl(&DataKey::Paused)
         });
         assert_eq!(paused_ttl, PERSISTENT_EXTEND_TO);
+    }
+
+    #[test]
+    fn stats_view_reflects_mixed_ops() {
+        use soroban_sdk::testutils::Ledger as _;
+        let (env, actors) = setup();
+        let c = fixtures::client(&env, &actors);
+
+        // Start zeroed.
+        let zero = c.get_stats();
+        assert_eq!(zero.locked_count, 0);
+        assert_eq!(zero.locked_total, 0);
+        assert_eq!(zero.released_count, 0);
+        assert_eq!(zero.lifetime_volume, 0);
+
+        // 3 deposits: 10M + 20M + 30M.
+        let id_a = fund_and_deposit(&env, &actors, 90, 10_000_000);
+        let id_b = fund_and_deposit(&env, &actors, 91, 20_000_000);
+        let id_c = fund_and_deposit(&env, &actors, 92, 30_000_000);
+        let mid = c.get_stats();
+        assert_eq!(mid.locked_count, 3);
+        assert_eq!(mid.locked_total, 60_000_000);
+        assert_eq!(mid.released_count, 0);
+        assert_eq!(mid.lifetime_volume, 60_000_000);
+
+        // Release one, refund one, expire one.
+        c.release(&actors.admin, &id_a);
+        c.refund(&actors.signer, &id_b);
+        env.ledger().set_timestamp(env.ledger().timestamp() + 7200);
+        c.expire(&id_c);
+        let end = c.get_stats();
+        assert_eq!(end.locked_count, 0);
+        assert_eq!(end.locked_total, 0);
+        assert_eq!(end.released_count, 1);
+        assert_eq!(end.lifetime_volume, 60_000_000);
     }
 }
