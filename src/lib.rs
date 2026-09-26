@@ -1687,4 +1687,66 @@ mod test {
         assert_eq!(end.released_count, 1);
         assert_eq!(end.lifetime_volume, 60_000_000);
     }
+
+    /// Counters stay consistent with ground truth (a full registry scan)
+    /// across 60 mixed lifecycles with varying amounts.
+    #[test]
+    fn counters_consistent_across_lifecycles() {
+        use soroban_sdk::testutils::Ledger as _;
+        let (env, actors) = setup();
+        let c = fixtures::client(&env, &actors);
+        fixtures::mint(&env, &actors, &actors.depositor, 100_000_000_000);
+
+        // 60 deposits, amounts 1_000_000 + i * 10_000.
+        let mut expected_volume: i128 = 0;
+        for i in 0u8..60u8 {
+            let amount = 1_000_000 + i128::from(i) * 10_000;
+            expected_volume += amount;
+            c.deposit(
+                &amount,
+                &fixtures::request_id(&env, 100 + i),
+                &actors.depositor,
+                &Some(actors.destination.clone()),
+                &(env.ledger().timestamp() + 3600),
+            );
+        }
+
+        // Release 20, refund 20, expire 10, leave 10 locked.
+        for i in 0u8..20u8 {
+            c.release(&actors.admin, &fixtures::request_id(&env, 100 + i));
+        }
+        for i in 20u8..40u8 {
+            c.refund(&actors.signer, &fixtures::request_id(&env, 100 + i));
+        }
+        env.ledger().set_timestamp(env.ledger().timestamp() + 7200);
+        for i in 40u8..50u8 {
+            c.expire(&fixtures::request_id(&env, 100 + i));
+        }
+
+        // Ground truth from a full scan (two pages).
+        let mut locked_count = 0u64;
+        let mut locked_total: i128 = 0;
+        let mut released_count = 0u64;
+        for offset in [0u32, 50u32] {
+            for req in c.list_requests(&None, &offset, &50).iter() {
+                match req.status {
+                    EscrowStatus::Locked => {
+                        locked_count += 1;
+                        locked_total += req.amount;
+                    }
+                    EscrowStatus::Released => released_count += 1,
+                    _ => {}
+                }
+            }
+        }
+        assert_eq!(locked_count, 10);
+        assert_eq!(released_count, 20);
+
+        // Counters match ground truth exactly.
+        let stats = c.get_stats();
+        assert_eq!(stats.locked_count, locked_count);
+        assert_eq!(stats.locked_total, locked_total);
+        assert_eq!(stats.released_count, released_count);
+        assert_eq!(stats.lifetime_volume, expected_volume);
+    }
 }
