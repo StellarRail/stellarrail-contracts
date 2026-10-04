@@ -2,7 +2,7 @@
 //! succeed or fail with a typed `EscrowError` — never a host trap.
 //!
 //! Deterministic xorshift64 PRNG (fixed seed) so failures reproduce exactly.
-//! The id space is deliberately tiny (500 ids) to force `AlreadyExists`
+//! The id space is deliberately tiny (200 ids) to force `AlreadyExists`
 //! collisions; amounts/deadlines sweep all validation boundaries.
 
 use escrow::validation::{MAX_AMOUNT, MAX_DEADLINE_SECS, MIN_DEADLINE_SECS};
@@ -38,8 +38,8 @@ fn fuzz_deposit_inputs() {
     env.ledger().set_timestamp(now);
     let client = EscrowContractClient::new(&env, &contract_id);
     client.initialize(&Address::generate(&env), &Address::generate(&env), &token);
-    // Funded far beyond the maximum possible drain (500 distinct ids ×
-    // MAX_AMOUNT each ≈ 2.5e20), so a pull can never trap on balance.
+    // Funded far beyond the maximum possible drain (200 distinct ids ×
+    // MAX_AMOUNT each ≈ 1e20), so a pull can never trap on balance.
     StellarAssetClient::new(&env, &token).mint(&depositor, &1_000_000_000_000_000_000_000_000_000);
 
     let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
@@ -68,8 +68,8 @@ fn fuzz_deposit_inputs() {
             4 => now + MAX_DEADLINE_SECS + 1 + (r % 100_000),
             _ => now + 10 * 365 * 24 * 60 * 60,
         };
-        // Tiny id space (500 values) forces AlreadyExists collisions.
-        let id_byte = u8::try_from((r >> 11) % 500).unwrap();
+        // Tiny id space (200 values) forces AlreadyExists collisions.
+        let id_byte = u8::try_from((r >> 11) % 200).unwrap();
         let id = BytesN::from_array(&env, &[id_byte; 32]);
         let dest = if r.is_multiple_of(17) {
             None
