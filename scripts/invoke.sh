@@ -24,66 +24,104 @@ CONTRACT_ID="${CONTRACT_ID:-$(cat "${ROOT}/.sandbox-contract-id" 2>/dev/null || 
 CMD="${1:-help}"
 shift || true
 
+# Parse --key value pairs into variables named OPT_<key with - → _>.
+AMOUNT=""; REQUEST_ID=""; DEPOSITOR=""; DESTINATION=""; DEADLINE=""
+CALLER=""; SOURCE=""; OFFSET="0"; LIMIT="20"; STATUS_FILTER=""; CONTRACT_OVERRIDE=""
+while [ $# -gt 0 ]; do
+  case "${1}" in
+  --amount) AMOUNT="${2:?}"; shift 2 ;;
+  --request-id) REQUEST_ID="${2:?}"; shift 2 ;;
+  --depositor) DEPOSITOR="${2:?}"; shift 2 ;;
+  --destination) DESTINATION="${2:?}"; shift 2 ;;
+  --deadline) DEADLINE="${2:?}"; shift 2 ;;
+  --caller) CALLER="${2:?}"; shift 2 ;;
+  --source) SOURCE="${2:?}"; shift 2 ;;
+  --offset) OFFSET="${2:?}"; shift 2 ;;
+  --limit) LIMIT="${2:?}"; shift 2 ;;
+  --status) STATUS_FILTER="${2:?}"; shift 2 ;;
+  --contract-id) CONTRACT_OVERRIDE="${2:?}"; shift 2 ;;
+  *) echo "unknown arg: ${1}" >&2; exit 1 ;;
+  esac
+done
+if [ -n "${CONTRACT_OVERRIDE}" ]; then CONTRACT_ID="${CONTRACT_OVERRIDE}"; fi
+
+# Every call needs a source identity (views use --send=no: simulate only).
+need_source() {
+  if [ -z "${SOURCE}" ]; then
+    echo "missing --source for '${CMD}'" >&2
+    exit 1
+  fi
+}
+need_source
+
 invoke() {
-  # $1 = fn, rest = stellar args
+  # $1 = fn; remaining args = contract args (already split).
   local fn="$1"
   shift
-  stellar contract invoke \
-    --id "${CONTRACT_ID}" \
-    --rpc-url "${RPC_URL}" \
-    --network-passphrase "${PASSPHRASE}" \
-    -- "$fn" "$@"
-}
-
-get() {
-  local key="$1"
-  shift
-  for a in "$@"; do
-    case "${a}" in
-    "${key}") echo "${2:-}" ;;
-    esac
-    shift || true
-  done
+  if [ -n "${IS_VIEW:-}" ]; then
+    stellar contract invoke \
+      --id "${CONTRACT_ID}" \
+      --rpc-url "${RPC_URL}" \
+      --network-passphrase "${PASSPHRASE}" \
+      --source-account "${SOURCE}" \
+      --send=no \
+      -- "$fn" "$@"
+  else
+    stellar contract invoke \
+      --id "${CONTRACT_ID}" \
+      --rpc-url "${RPC_URL}" \
+      --network-passphrase "${PASSPHRASE}" \
+      --source-account "${SOURCE}" \
+      -- "$fn" "$@"
+  fi
 }
 
 case "${CMD}" in
 deposit)
-  # args: --amount --request-id --depositor --destination --deadline --source
+  : "${AMOUNT:?--amount required}"
+  : "${REQUEST_ID:?--request-id required}"
+  : "${DEPOSITOR:?--depositor required}"
+  : "${DESTINATION:?--destination required}"
+  : "${DEADLINE:?--deadline required}"
+  # The CLI parses Option<Address> as JSON: auto-quote a bare strkey.
+  case "${DESTINATION}" in
+  '"'*'"') ;;
+  *) DESTINATION="\"${DESTINATION}\"" ;;
+  esac
   invoke deposit \
-    --amount "$(get --amount "$@")" \
-    --request-id "$(get --request-id "$@")" \
-    --depositor "$(get --depositor "$@")" \
-    --destination "$(get --destination "$@")" \
-    --deadline "$(get --deadline "$@")" \
-    --source-account "$(get --source "$@")"
+    --amount "${AMOUNT}" \
+    --request-id "${REQUEST_ID}" \
+    --depositor "${DEPOSITOR}" \
+    --destination "${DESTINATION}" \
+    --deadline "${DEADLINE}"
   ;;
 release)
-  invoke release \
-    --caller "$(get --caller "$@")" \
-    --request-id "$(get --request-id "$@")" \
-    --source-account "$(get --source "$@")"
+  : "${CALLER:?--caller required}"
+  : "${REQUEST_ID:?--request-id required}"
+  invoke release --caller "${CALLER}" --request-id "${REQUEST_ID}"
   ;;
 refund)
-  invoke refund \
-    --caller "$(get --caller "$@")" \
-    --request-id "$(get --request-id "$@")" \
-    --source-account "$(get --source "$@")"
+  : "${CALLER:?--caller required}"
+  : "${REQUEST_ID:?--request-id required}"
+  invoke refund --caller "${CALLER}" --request-id "${REQUEST_ID}"
   ;;
 expire)
-  invoke expire \
-    --request-id "$(get --request-id "$@")" \
-    --source-account "$(get --source "$@")"
+  : "${REQUEST_ID:?--request-id required}"
+  invoke expire --request-id "${REQUEST_ID}"
   ;;
 get-request)
-  invoke get_request --request-id "$(get --request-id "$@")"
+  : "${REQUEST_ID:?--request-id required}"
+  IS_VIEW=1 invoke get_request --request-id "${REQUEST_ID}"
   ;;
 get-stats)
-  invoke get_stats
+  IS_VIEW=1 invoke get_stats
   ;;
 list)
-  invoke list_requests \
-    --offset "$(get --offset "$@" || echo 0)" \
-    --limit "$(get --limit "$@" || echo 20)"
+  if [ -n "${STATUS_FILTER}" ]; then
+    IS_VIEW=1 invoke list_requests --status-filter "${STATUS_FILTER}" --offset "${OFFSET}" --limit "${LIMIT}"
+  else
+    IS_VIEW=1 invoke list_requests --offset "${OFFSET}" --limit "${LIMIT}"
+  fi
   ;;
 *)
   sed -n '2,20p' "$0"
