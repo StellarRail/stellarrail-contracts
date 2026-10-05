@@ -20,8 +20,12 @@ jobs:
           targets: wasm32v1-none
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Install stellar-cli (pinned)
-        run: cargo install stellar-cli --locked --version 27.1.0
+      - name: Install stellar-cli 27.1.0 (pinned binary)
+        run: |
+          curl -sSL -o /tmp/stellar-cli.tgz https://github.com/stellar/stellar-cli/releases/download/v27.1.0/stellar-cli-27.1.0-x86_64-unknown-linux-gnu.tar.gz
+          mkdir -p /tmp/stellar-cli && tar -xzf /tmp/stellar-cli.tgz -C /tmp/stellar-cli
+          sudo install "$(find /tmp/stellar-cli -name stellar -type f | head -1)" /usr/local/bin/stellar
+          stellar --version
       - name: Full gate (fmt + clippy + test + build)
         run: |
           cargo fmt --all -- --check
