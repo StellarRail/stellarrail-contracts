@@ -1,0 +1,10 @@
+target/
+test_snapshots/
+node_modules/
+clients/js/node_modules/
+clients/js/dist-test/
+.git/
+.soroban/
+.env
+*.key.json
+.sandbox-contract-id
