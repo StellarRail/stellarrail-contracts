@@ -1,0 +1,12 @@
+# StellarRail escrow — mainnet network config (pilot-pending).
+# NO mainnet deployment exists yet. Fill escrow_contract after the gated
+# ceremony in docs/DEPLOY_MAINNET.md.
+rpc_url = "https://soroban-mainnet.stellar.org"
+horizon_url = "https://horizon.stellar.org"
+network_passphrase = "Public Global Stellar Network ; September 2015"
+
+# Native XLM SAC — resolve at ceremony time, never trust a pasted value:
+#   stellar contract id asset --asset native --network mainnet
+sac_xlm = ""
+
+escrow_contract = ""

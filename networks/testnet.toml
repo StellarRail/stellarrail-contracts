@@ -1,0 +1,12 @@
+# StellarRail escrow — testnet network config.
+# Consumed by scripts/check-network.sh and documented for operators.
+rpc_url = "https://soroban-testnet.stellar.org"
+horizon_url = "https://horizon-testnet.stellar.org"
+network_passphrase = "Test SDF Network ; September 2015"
+
+# Native XLM Stellar Asset Contract (verified 2026-10-04 via
+# `stellar contract id asset --asset native --network testnet`).
+sac_xlm = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+
+# Deployed escrow contract (see deployments/testnet.json).
+escrow_contract = "CDAV32AHVV6Q7FFNPUFA76AARTGWBE2QFIU3WAPDV64QIBRTGUFKLU2K"
