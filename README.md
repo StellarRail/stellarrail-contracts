@@ -1,5 +1,8 @@
 # stellarrail-contracts
 
+[![CI](https://github.com/StellarRail/stellarrail-contracts/actions/workflows/ci.yml/badge.svg)](https://github.com/StellarRail/stellarrail-contracts/actions/workflows/ci.yml)
+[![Security](https://github.com/StellarRail/stellarrail-contracts/actions/workflows/security.yml/badge.svg)](https://github.com/StellarRail/stellarrail-contracts/actions/workflows/security.yml)
+
 Soroban escrow contract for StellarRail: lock XLM (`deposit`), settle to a
 destination (`release`), return to the funder (`refund`), rescue past-due
 funds permissionlessly (`expire`) — plus admin roles, events, and upgrades.

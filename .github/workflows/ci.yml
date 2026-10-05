@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+          components: rustfmt, clippy
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets -- -D warnings
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+          targets: wasm32v1-none
+      - uses: Swatinem/rust-cache@v2
+      - name: Install stellar-cli (pinned)
+        run: cargo install stellar-cli --locked --version 27.1.0
+      - name: Build WASM (required by integration_sandbox at runtime)
+        run: stellar contract build
+      - run: cargo test --all-targets
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+          targets: wasm32v1-none
+      - uses: Swatinem/rust-cache@v2
+      - name: Install stellar-cli (pinned)
+        run: cargo install stellar-cli --locked --version 27.1.0
+      - run: stellar contract build
+      - name: Record hash
+        run: |
+          sha256sum target/wasm32v1-none/release/escrow.wasm | tee escrow.wasm.sha256
+          ls -lh target/wasm32v1-none/release/escrow.wasm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: escrow-wasm
+          path: |
+            target/wasm32v1-none/release/escrow.wasm
+            escrow.wasm.sha256
