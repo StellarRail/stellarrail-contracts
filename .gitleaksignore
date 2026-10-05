@@ -1,0 +1,7 @@
+# Gitleaks exceptions (audited false positives — do NOT add real secrets here).
+#
+# 1. deployments/testnet.json: the `wasmHash` field (64-hex sha256) trips the
+#    generic-api-key rule (entropy ~4.6). It is a public build artifact hash,
+#    also recorded in deployments/builds.json. Fingerprint from the
+#    2026-10-05 scan:
+5b2e212e20118e9250a85b48b42d291bab36d78b:deployments/testnet.json:generic-api-key:1

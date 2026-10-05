@@ -25,7 +25,7 @@ jobs:
         run: |
           curl -sSL -o /tmp/stellar-cli.tgz https://github.com/stellar/stellar-cli/releases/download/v27.1.0/stellar-cli-27.1.0-x86_64-unknown-linux-gnu.tar.gz
           mkdir -p /tmp/stellar-cli && tar -xzf /tmp/stellar-cli.tgz -C /tmp/stellar-cli
-          sudo install "$(find /tmp/stellar-cli -name stellar -type f | head -1)" /usr/local/bin/stellar
+          sudo install /tmp/stellar-cli/stellar /usr/local/bin/stellar
           stellar --version
       - name: Build WASM
         run: stellar contract build
