@@ -1,0 +1,32 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly supply-chain re-check (advisories change under a fixed lockfile).
+    - cron: "0 6 * * 1"
+
+jobs:
+  security:
+    name: security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-audit (pinned)
+        run: cargo install cargo-audit --locked --version 0.22.2
+      - run: cargo audit
+      - name: Gitleaks (no secrets in history)
+        uses: gitleaks/gitleaks-action@v2
+      - name: Shellcheck scripts
+        run: |
+          sudo apt-get update -y -qq
+          sudo apt-get install -y -qq shellcheck
+          shellcheck -S warning scripts/*.sh

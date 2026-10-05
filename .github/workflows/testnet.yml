@@ -1,0 +1,41 @@
+name: Testnet smoke
+
+# Manual dispatch ONLY. Never runs on push/PR (live network + secrets).
+on:
+  workflow_dispatch:
+    inputs:
+      contract_id:
+        description: "Escrow contract id (default: deployments/testnet.json)"
+        required: false
+        default: ""
+
+jobs:
+  smoke:
+    name: smoke
+    runs-on: ubuntu-latest
+    environment: testnet
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+          targets: wasm32v1-none
+      - uses: Swatinem/rust-cache@v2
+      - name: Install stellar-cli (pinned)
+        run: cargo install stellar-cli --locked --version 27.1.0
+      - name: Build WASM
+        run: stellar contract build
+      - name: Run smoke (deposit → release, asserts balances)
+        env:
+          ADMIN_SOURCE: ${{ secrets.TESTNET_ADMIN_SECRET }}
+          CONTRACT_ID: ${{ inputs.contract_id }}
+        run: ./scripts/smoke-testnet.sh
+      - name: Run expire drill
+        env:
+          CONTRACT_ID: ${{ inputs.contract_id }}
+        run: ./scripts/expire-drill.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: testnet-evidence
+          path: deployments/smoke-*.json
