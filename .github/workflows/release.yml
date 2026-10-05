@@ -68,6 +68,10 @@ jobs:
 
   mainnet-gate:
     name: mainnet-gate
+    # Skipped by default. For a real pilot: set the repo variable
+    # ENABLE_MAINNET_DEPLOY=true AND approve the `mainnet-gate` environment;
+    # the script still refuses without CONFIRM_MAINNET=DEPLOY-TO-MAINNET.
+    if: ${{ vars.ENABLE_MAINNET_DEPLOY == 'true' }}
     needs: [verify-and-release]
     runs-on: ubuntu-latest
     environment: mainnet-gate
