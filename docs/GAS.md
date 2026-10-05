@@ -51,8 +51,29 @@ Every helper in `src/storage.rs` extends TTL on write
   ledger of the window (`storage::test::{writes_extend_ttl_to_policy_window,
   entry_survives_to_end_of_extended_window, singleton_writes_extend_ttl}`).
 
-Testnet-measured numbers (per-ledger resource costs) are recorded here after
-ISSUE-051 (`make report-gas`).
+Testnet-measured fees below (ISSUE-051). Re-run via the Horizon links in
+`deployments/smoke-*.json` / `deployments/upgrade-drill.md`.
+
+## Measured testnet fees (2026-10-04)
+
+`fee_charged` in stroops (10^7 stroops = 1 XLM), one op per tx:
+
+| Entrypoint | Fee (stroops) | Fee (XLM) | Tx (testnet) |
+|---|---|---|---|
+| `initialize` | 1 667 775 | ~0.167 | `525696ed…3e42` |
+| `deposit` | 1 932 960 | ~0.193 | `6005a734…2cf6` |
+| `release` | 24 005 | ~0.0024 | `aab4c2cb…37e6f` |
+| `refund` | 24 005 | ~0.0024 | `99db59c1…d9f58` |
+| `expire` | 22 106 | ~0.0022 | `f211c9d1…e19e1e` |
+| `migrate` | 8 158 | ~0.0008 | `8f2dd21c…66aab9` |
+| views (`get_request`, `list_requests`, `get_stats`, `version`) | 0 on-chain | 0 | simulate only |
+
+Reading: **writes that create entries cost ~0.17–0.19 XLM**
+(`deposit` creates the request + grows `AllIds`; `initialize` writes 5
+singletons), while **updates cost ~0.002 XLM** (`release`/`refund`/`expire`
+rewrite existing entries + extend TTL). Fee guidance for the API: budget
+0.25 XLM per `deposit`, 0.01 XLM per settlement leg — overestimated 4–25×
+on purpose; refunds of unused fee allowance are automatic.
 
 ## Optimization pass (ISSUE-037)
 
