@@ -36,7 +36,7 @@ jobs:
         run: |
           TAG="${GITHUB_REF_NAME#contracts-v}"
           MAJOR="${TAG%%.*}"
-          SCHEMA="$(grep -E 'pub const SCHEMA_VERSION' src/types.rs | grep -oE '[0-9]+')"
+          SCHEMA="$(sed -n 's/.*SCHEMA_VERSION[^=]*= *\([0-9][0-9]*\).*/\1/p' src/types.rs)"
           echo "tag=${TAG} major=${MAJOR} schema=${SCHEMA}"
           [ "${MAJOR}" = "${SCHEMA}" ] || { echo "tag/schema mismatch" >&2; exit 1; }
           grep -q "## \[v${TAG}\]" CHANGELOG.md || { echo "CHANGELOG lacks v${TAG}" >&2; exit 1; }
