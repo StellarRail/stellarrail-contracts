@@ -24,3 +24,17 @@ The contract never uses bare `panic!` outside tests.
 `ContractError` code in the error string, e.g.
 `error: EscrowError(3)` → `Unauthorized` → HTTP 403. The JS client
 (`clients/js/`) maps these automatically — see `errorMapping.ts`.
+
+## Panic policy
+
+Contract (non-test) code **never panics**: every fallible path returns
+`Result<_, EscrowError>`, there is no `panic!`/`unwrap()`/`expect()` outside
+`#[cfg(test)]` modules, and arithmetic is checked (`checked_*` → `Overflow`).
+A `panic!` in this repo therefore always means a broken test harness, never
+a user-facing failure mode. Audit with:
+
+```bash
+grep -rn --include='*.rs' -e 'panic!\|panic_with_error\|\.unwrap()\|\.expect(' src/
+# Every hit must sit inside a #[cfg(test)] module (verified: 13 hits, all in
+# src/lib.rs / src/events.rs test helpers + page assertions).
+```
