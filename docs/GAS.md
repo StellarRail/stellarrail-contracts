@@ -95,3 +95,15 @@ signatures mandate by-value params; see `src/lib.rs`).
 WASM size: **19 715 bytes** after the full contract (vs 19 KiB scaffold-era
 snapshot — growth is the Phase B interface itself, well under the 50 KiB
 budget in ISSUE-061).
+
+## Release profile (ISSUE-061)
+
+`[profile.release]`: `opt-level = "z"`, `lto = true`, `strip = true`,
+`overflow-checks = true` (root `Cargo.toml`). Evaluated `panic = "abort"` +
+`codegen-units = 1`: **larger** output (20 597 vs 20 468 bytes), so reverted —
+the shipped profile is the optimum and, critically, the one that produced
+the deployed hash `de7f457c…fbc1a` (rebuilding reproduces it byte-for-byte;
+see `scripts/reproducible-build.sh`).
+
+Final artifact: `target/wasm32v1-none/release/escrow.wasm`, **20 468 bytes**
+(< 50 KiB budget ✅), recorded in `deployments/builds.json`.
