@@ -69,3 +69,10 @@ Live smoke evidence: `deployments/smoke-2026-10-04.json`
 
 Pre-audit self-assessment complete (`docs/AUDIT_CHECKLIST.md`, all ticked or
 risk-accepted). External audit: _pending_ — do not mainnet without it.
+
+## License
+
+Dual MIT / Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`), per Soroban norms.
+Dependency snapshot: `deployments/dependencies.txt` (`cargo audit` clean —
+one transitive unmaintained-lint on `paste` via the pinned SDK's ark crypto,
+no CVE, accepted).

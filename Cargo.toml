@@ -5,7 +5,7 @@ name = "escrow"
 version = "0.1.0"
 edition = "2021"
 description = "StellarRail Soroban escrow contract (XLM): deposit / release / refund / expire"
-license = "MIT"
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/stellarrail/stellarrail-contracts"
 
 [lib]
