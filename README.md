@@ -5,6 +5,9 @@ destination (`release`), return to the funder (`refund`), rescue past-due
 funds permissionlessly (`expire`) — plus admin roles, events, and upgrades.
 
 > Interface is **frozen** at v1 (see `docs/adr/`): any change needs an ADR.
+> Frozen entrypoints: `initialize`, `deposit`, `release`, `refund`, `expire`,
+> `get_request`, `list_requests`, `get_stats`, `set_paused`,
+> `transfer_admin`, `accept_admin`, `set_signer`, `version`, `migrate`.
 
 ## Interface
 
