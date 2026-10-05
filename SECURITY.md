@@ -56,8 +56,12 @@ replace before mainnet) with: affected version (`version()` output), network
 
 | Contract version | Status |
 |---|---|
-| `contracts-v1.0.0-rc1` (upcoming) | supported (testnet pilot) |
-| pre-release snapshots | unsupported |
+| `contracts-v1.0.0-rc1` (tag cut at ISSUE-070) | supported: testnet pilot only until mainnet pilot criteria pass (`docs/DEPLOY_MAINNET.md`) |
+| pre-release / untagged builds | unsupported — do not use with real funds |
+
+External audit status: self-assessment complete (`docs/AUDIT_CHECKLIST.md`);
+independent audit **pending** — mainnet pilot requires it
+(see `docs/PRODUCTION.md`, forthcoming ISSUE-066).
 
 ## Pause authority
 
