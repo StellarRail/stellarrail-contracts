@@ -1,0 +1,10 @@
+{
+  "wasm": "target/wasm32v1-none/release/escrow.wasm",
+  "sha256": "de7f457c643389fcf07be011391f75a26ffc4679d406771219f1b49e394fbc1a",
+  "size": 20468,
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)",
+  "stellar": "stellar 27.1.0 (8e402ea28202950b272fbabc34caad4d2f64fe87)",
+  "sorobanSdk": "28.0.0",
+  "builtAt": "2026-10-04T20:14:53Z"
+}
