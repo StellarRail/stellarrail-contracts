@@ -37,8 +37,8 @@ export CONFIRM_MAINNET=DEPLOY-TO-MAINNET SOURCE_SECRET=... \
   `docs/UPGRADE.md`; state is preserved.
 - Active exploit → `set_paused(true)` immediately (pause drill contacts in
   `SECURITY.md`); `expire` keeps rescuing funds while paused.
-- Worst case → see `docs/DISASTER_RECOVERY.md` (direct CLI settlement
-  without the API).
+- Worst case → see `docs/DISASTER_RECOVERY.md` (forthcoming, ISSUE-065;
+  direct CLI settlement without the API).
 
 ## Pilot limits
 

@@ -41,6 +41,22 @@ The contract never mints; it only pulls on `deposit` (via the depositor's
 authorization) and pushes on settlement. Status is written **before** the
 external token call (checks-effects-interactions).
 
+## Lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> Locked: deposit
+    Locked --> Released: release (admin/signer, before deadline)
+    Locked --> Refunded: refund (admin/signer, any time)
+    Locked --> Expired: expire (anyone, past deadline)
+    Released --> [*]
+    Refunded --> [*]
+    Expired --> [*]
+```
+
+Terminal states never transition; every second mutation fails `InvalidState`
+with balances unchanged (`test::edge_double_ops_move_no_funds`).
+
 ## Trust boundaries
 
 - `release`/`refund`: admin OR signer (`caller.require_auth()` + role check).

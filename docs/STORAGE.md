@@ -63,4 +63,5 @@ untouched approaches the edge.
 If eviction ever strands funds, recovery is a contract upgrade (state is
 preserved across `migrate`) shipping a one-off admin sweep keyed off SAC
 balance deltas, recorded as an ADR. This is accepted residual risk for v1 —
-see `docs/AUDIT_CHECKLIST.md` and `docs/PRODUCTION.md` (keeper monitoring).
+see `docs/AUDIT_CHECKLIST.md` and `docs/PRODUCTION.md` (forthcoming,
+ISSUE-066; keeper monitoring).

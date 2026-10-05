@@ -1,7 +1,8 @@
 # Events (indexer contract)
 
 Every mutation emits exactly one typed event. The API worker polls
-`getEvents` filtered by `contractId` + topics below.
+`getEvents` filtered by `contractId` + topics below. Polling loop,
+idempotency, and reorg rules: `docs/INDEXER.md`.
 
 ## Catalog
 

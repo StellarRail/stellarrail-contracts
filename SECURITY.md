@@ -4,7 +4,7 @@
 
 | Actor | Capability | Contract defense |
 |---|---|---|
-| Malicious operator (stolen admin key) | pause, rotate signer, migrate, settle any escrow | Two-step rotation limits instant takeover; pause is visible on-chain (`Paused` event); migration is the explicit upgrade path (see `docs/UPGRADE.md`). Key custody (multisig/HSM) is an ops requirement — see `docs/PRODUCTION.md`. |
+| Malicious operator (stolen admin key) | pause, rotate signer, migrate, settle any escrow | Two-step rotation limits instant takeover; pause is visible on-chain (`Paused` event); migration is the explicit upgrade path (see `docs/UPGRADE.md`). Key custody (multisig/HSM) is an ops requirement — see `docs/PRODUCTION.md` (forthcoming, ISSUE-066). |
 | Rogue approver (stolen signer key) | release/refund any escrow | Admin rotates the signer in one tx (`set_signer`); old signer invalid immediately. Signer cannot pause, rotate admin, or migrate. |
 | Random stranger | call any permissionless path | Only `expire` + views are open, and `expire` can solely pay the original depositor. Everything else denies typed `Unauthorized`. |
 | Compromised / fake token | reenter or lie about balances | The contract talks to exactly one SAC id (stored at `initialize`); the Soroban host forbids reentrancy; status is written before the external transfer. |
@@ -61,7 +61,8 @@ replace before mainnet) with: affected version (`version()` output), network
 
 ## Pause authority
 
-The admin key (multisig at mainnet — see `docs/PRODUCTION.md`) may invoke
+The admin key (multisig at mainnet — see `docs/PRODUCTION.md`, forthcoming
+ISSUE-066) may invoke
 `set_paused` at any time. Pause drill contacts (template):
 
 - Primary on-call: _name / phone / stellar address_
@@ -70,4 +71,4 @@ The admin key (multisig at mainnet — see `docs/PRODUCTION.md`) may invoke
 
 Pause drill: freeze → announce → diagnose → fix-or-migrate → unpause, with
 `RequestExpired`/`PaymentReleased` event monitoring throughout (see
-`docs/DISASTER_RECOVERY.md`).
+`docs/DISASTER_RECOVERY.md`, forthcoming ISSUE-065).
