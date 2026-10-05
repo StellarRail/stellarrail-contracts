@@ -45,6 +45,8 @@ export function deposit(
   net: NetConfig,
   p: { amount: string; requestId: string; depositor: string; destination: string; deadline: number },
 ): Promise<EscrowRequest> {
+  // The CLI parses Option<Address> as JSON: quote a bare strkey.
+  const destination = /^".*"$/.test(p.destination) ? p.destination : `"${p.destination}"`;
   return run<EscrowRequest>([
     ...base(net),
     "deposit",
@@ -55,7 +57,7 @@ export function deposit(
     "--depositor",
     p.depositor,
     "--destination",
-    p.destination,
+    destination,
     "--deadline",
     String(p.deadline),
   ]);

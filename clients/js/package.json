@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --test dist-test/*.test.js"
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/test/"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",
