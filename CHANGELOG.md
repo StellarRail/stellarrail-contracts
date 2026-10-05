@@ -4,7 +4,7 @@ All notable changes to the escrow contract. Versioning policy below.
 
 ## [Unreleased]
 
-## [v1.0.0-rc1] — 2026-10-04 (this build plan)
+## [v1.0.0-rc1] — 2026-10-05 (this build plan, tag `contracts-v1.0.0-rc1`)
 
 First production-release candidate: full FR-4 escrow surface, audited
 (self-assessment), gas-measured, live on testnet.

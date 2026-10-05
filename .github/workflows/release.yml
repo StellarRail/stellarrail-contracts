@@ -1,0 +1,76 @@
+name: Release
+
+# Cut a release by pushing a tag: git tag contracts-v1.0.0-rc1 && git push origin <tag>
+on:
+  push:
+    tags: ["contracts-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-release:
+    name: verify-and-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
+          targets: wasm32v1-none
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install stellar-cli (pinned)
+        run: cargo install stellar-cli --locked --version 27.1.0
+      - name: Full gate (fmt + clippy + test + build)
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --all-targets -- -D warnings
+          stellar contract build
+          cargo test --all-targets
+      - name: version() must match the tag major
+        run: |
+          TAG="${GITHUB_REF_NAME#contracts-v}"
+          MAJOR="${TAG%%.*}"
+          SCHEMA="$(grep -E 'pub const SCHEMA_VERSION' src/types.rs | grep -oE '[0-9]+')"
+          echo "tag=${TAG} major=${MAJOR} schema=${SCHEMA}"
+          [ "${MAJOR}" = "${SCHEMA}" ] || { echo "tag/schema mismatch" >&2; exit 1; }
+          grep -q "## \[v${TAG}\]" CHANGELOG.md || { echo "CHANGELOG lacks v${TAG}" >&2; exit 1; }
+      - name: Package artifacts
+        run: |
+          ./scripts/reproducible-build.sh
+          cp target/wasm32v1-none/release/escrow.wasm escrow.wasm
+          sha256sum escrow.wasm > escrow.wasm.sha256
+      - name: Changelog excerpt
+        run: |
+          python3 - <<'EOF'
+          import re
+          tag = "${{ github.ref_name }}".removeprefix("contracts-")
+          text = open("CHANGELOG.md").read()
+          m = re.search(rf"^## \[{re.escape(tag)}\].*?(?=^## \[|\Z)", text, re.M | re.S)
+          open("release-notes.md", "w").write(m.group(0) if m else tag)
+          EOF
+          cat release-notes.md
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            escrow.wasm
+            escrow.wasm.sha256
+            deployments/builds.json
+          body_path: release-notes.md
+          draft: false
+          prerelease: true
+
+  mainnet-gate:
+    name: mainnet-gate
+    needs: [verify-and-release]
+    runs-on: ubuntu-latest
+    environment: mainnet-gate
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guarded mainnet deploy (aborts without CONFIRM_MAINNET)
+        run: |
+          ./scripts/check-network.sh mainnet || true
+          ./scripts/deploy-mainnet.sh
+          echo "mainnet deploy ran only with explicit CONFIRM_MAINNET (see job log)."
