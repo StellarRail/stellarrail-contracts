@@ -5,7 +5,7 @@
 FROM rust:1.97-slim-bookworm AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl pkg-config \
+      ca-certificates curl pkg-config libdbus-1-3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Pinned stellar-cli binary (x86_64; compiling from source needs dbus dev
