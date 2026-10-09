@@ -8,6 +8,11 @@ Soroban escrow contract for StellarRail: lock XLM (`deposit`), settle to a
 destination (`release`), return to the funder (`refund`), rescue past-due
 funds permissionlessly (`expire`) — plus admin roles, events, and upgrades.
 
+- **Org docs:** [profile](https://github.com/StellarRail/.github/blob/main/profile/README.md) ·
+  [architecture](https://github.com/StellarRail/.github/blob/main/docs/ARCHITECTURE.md) ·
+  [contributing](https://github.com/StellarRail/.github/blob/main/CONTRIBUTING.md) ·
+  [security](https://github.com/StellarRail/.github/blob/main/SECURITY.md)
+
 > Interface is **frozen** at v1 (see `docs/adr/`): any change needs an ADR.
 > Frozen entrypoints: `initialize`, `deposit`, `release`, `refund`, `expire`,
 > `get_request`, `list_requests`, `get_stats`, `set_paused`,
